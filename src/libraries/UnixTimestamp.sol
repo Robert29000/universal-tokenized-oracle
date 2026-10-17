@@ -55,8 +55,4 @@ library UnixTimestamp {
     function getWeekday(uint256 _timestamp) internal pure returns (uint256) {
         return (_timestamp / 86400 + 3) % 7;
     }
-
-    function getHour(uint256 _timestamp) internal pure returns (uint256) {
-        return (_timestamp % 1 days) / 1 hours;
-    }
 }

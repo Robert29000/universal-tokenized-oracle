@@ -8,6 +8,10 @@ library ETTimestamp {
     uint256 constant EST_OFFSET = 5 hours;
     uint256 constant EDT_OFFSET = 4 hours;
 
+    uint256 constant FRIDAY_CLOSE  = 4 days + 20 hours; // Friday 20:00
+    uint256 constant SUNDAY_REOPEN = 6 days + 20 hours; // Sunday 20:00
+    uint256 constant WEEK          = 7 days;
+
     function getETTransitionBoundariesInUTC(uint256 _year) internal pure returns (uint256, uint256) {
 
         // DST starts on the second Sunday in March
@@ -45,27 +49,41 @@ library ETTimestamp {
     }
 
     function isETWeekend(uint256 _timestamp, uint256 dstStartTimestamp, uint256 dstEndTimestamp) internal pure returns (bool) {
-        uint offest = getETOffset(_timestamp, dstStartTimestamp, dstEndTimestamp);
-        uint256 etTimestamp = _timestamp - offest;
+        uint256 etTimestamp = toETTimestamp(_timestamp, dstStartTimestamp, dstEndTimestamp);
 
         return UnixTimestamp.isWeekendDay(etTimestamp);
     }
 
     function isETWeekendTrading(uint256 _timestamp, uint256 dstStartTimestamp, uint256 dstEndTimestamp) internal pure returns (bool) {
-        uint offest = getETOffset(_timestamp, dstStartTimestamp, dstEndTimestamp);
-        uint256 etTimestamp = _timestamp - offest;
+        uint256 etTimestamp = toETTimestamp(_timestamp, dstStartTimestamp, dstEndTimestamp);
 
-        uint256 weekDay = UnixTimestamp.getWeekday(etTimestamp);
+        return _checkETWeekendTrading(etTimestamp, 0);
+    }
 
-        if (weekDay < 4) {
-            return false;
-        } else if (weekDay == 5) {
-            return true;
-        } else if (weekDay == 4) {
-            return UnixTimestamp.getHour(etTimestamp) >= 20;
-        } else {
-            return UnixTimestamp.getHour(etTimestamp) < 20;
+    function isETWeekendTrading(uint256 _timestamp, uint256 dstStartTimestamp, uint256 dstEndTimestamp, uint256 _gracePeriodOffset) internal pure returns (bool) {
+        uint256 etTimestamp = toETTimestamp(_timestamp, dstStartTimestamp, dstEndTimestamp);
+
+        return _checkETWeekendTrading(etTimestamp, _gracePeriodOffset);
+    }
+
+    function _checkETWeekendTrading(uint256 _etTimestamp, uint256 _gracePeriod) internal pure returns (bool) {
+        // Seconds elapsed since Monday 00:00 ET of the current week
+        uint256 secondsIntoWeek = UnixTimestamp.getWeekday(_etTimestamp) * 1 days + _etTimestamp % 1 days;
+
+        // Monday 00:00 – Friday 20:00: market open, unless last Sunday's grace period is still running
+        if (secondsIntoWeek < FRIDAY_CLOSE) {
+            uint256 sinceLastReopen = secondsIntoWeek + (WEEK - SUNDAY_REOPEN);
+            return sinceLastReopen < _gracePeriod;
         }
+
+        // Friday 20:00 – Sunday 20:00: market closed
+        if (secondsIntoWeek < SUNDAY_REOPEN) {
+            return true;
+        }
+
+        // Sunday 20:00 – Monday 00:00: market reopened, grace period may still be running
+        uint256 sinceReopen = secondsIntoWeek - SUNDAY_REOPEN;
+        return sinceReopen < _gracePeriod;
     }
 
     function getETOffset(uint256 _timestamp, uint256 dstStartTimestamp, uint256 dstEndTimestamp) internal pure returns (uint256) {
@@ -74,6 +92,11 @@ library ETTimestamp {
         } else {
             return EST_OFFSET;
         }
+    }
+
+    function toETTimestamp(uint256 _timestamp, uint256 dstStartTimestamp, uint256 dstEndTimestamp) internal pure returns (uint256) {
+        uint256 offset = getETOffset(_timestamp, dstStartTimestamp, dstEndTimestamp);
+        return _timestamp - offset;
     }
 
 }
