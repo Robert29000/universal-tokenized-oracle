@@ -39,12 +39,12 @@ abstract contract UniversalOracleBase is Ownable, IUniversalOracleBase {
 
     }
 
-    function _checkStaleness(uint256 updatedAt) internal virtual view{
+    function _checkStaleness(uint256 _updatedAt) internal virtual view {
 
     }
 
     function _checkPrice(int256 price) internal virtual view {
-
+        require(price > 0, PriceZero());
     }
 
     function decimals() external virtual override view returns (uint8) {
