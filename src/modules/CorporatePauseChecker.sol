@@ -6,15 +6,15 @@ import { UniversalOracleBase } from "../UniversalOracleBase.sol";
 import { ICorporatePauseChecker } from "./interfaces/ICorporatePauseChecker.sol";
 import { IPauseConfigurator } from "./corporate_providers/interfaces/IPauseConfigurator.sol";
 
-contract CorporatePauseChecker is UniversalOracleBase, ICorporatePauseChecker {
+abstract contract CorporatePauseChecker is UniversalOracleBase, ICorporatePauseChecker {
 
     IPauseConfigurator public pauseConfigurator;
     
-    constructor(address _aggregator, address _pauseConfigurator) UniversalOracleBase(_aggregator) {
+    constructor(address _pauseConfigurator) {
         _setPauseConfigurator(_pauseConfigurator);
     }
 
-    function _corporatePauseCheck() internal override view {
+    function _corporatePauseCheck() internal virtual override view {
         bool isPaused = pauseConfigurator.isPaused();
         require(!isPaused, CorporatePaused());
     }

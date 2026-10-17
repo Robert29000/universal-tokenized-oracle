@@ -8,13 +8,13 @@ import {UnixTimestamp} from "../libraries/UnixTimestamp.sol";
 import {IStalenessChecker} from "./interfaces/IStalenessChecker.sol";
 
 
-contract StalenessChecker is UniversalOracleBase, IStalenessChecker {
+abstract contract StalenessChecker is UniversalOracleBase, IStalenessChecker {
 
     uint256 public immutable maxStaleness;
     uint256 public immutable tradingStaleness;
     uint256 public immutable reopenTimeWait;
 
-    constructor(address _aggregator, uint256 _maxStaleness, uint256 _tradingStaleness, uint256 _reopenTimeWait) UniversalOracleBase(_aggregator) {
+    constructor(uint256 _maxStaleness, uint256 _tradingStaleness, uint256 _reopenTimeWait) {
         require(_maxStaleness > 0, MaxStalenessZero());
         require(_tradingStaleness > 0, TradingStalenessZero());
         require(_maxStaleness >= _tradingStaleness, MaxStalenessLessThanTradingStaleness());
@@ -26,7 +26,7 @@ contract StalenessChecker is UniversalOracleBase, IStalenessChecker {
         reopenTimeWait = _reopenTimeWait;
     }
 
-    function _checkStaleness(uint256 _updatedAt) internal override view {
+    function _checkStaleness(uint256 _updatedAt) internal virtual override view {
         require(_updatedAt + maxStaleness >= block.timestamp, MaxStalenessReached());
 
         if (_updatedAt + tradingStaleness < block.timestamp) {

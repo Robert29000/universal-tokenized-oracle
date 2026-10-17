@@ -5,7 +5,7 @@ import { UniversalOracleBase } from "../UniversalOracleBase.sol";
 import { AggregatorV2V3Interface as IAggregatorV2V3 } from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV2V3Interface.sol";
 import { IL2SequencerChecker } from "./interfaces/IL2SequencerChecker.sol";
 
-contract L2SequencerChecker is UniversalOracleBase, IL2SequencerChecker {
+abstract contract L2SequencerChecker is UniversalOracleBase, IL2SequencerChecker {
 
     uint256 constant MIN_DOWNTIME_WAIT = 1 seconds;
     uint256 constant MAX_DOWNTIME_WAIT = 1 days;
@@ -15,7 +15,7 @@ contract L2SequencerChecker is UniversalOracleBase, IL2SequencerChecker {
 
     uint256 public downtimeWait;
 
-    constructor(address _aggregator, address _sequencerAggregator, uint256 _downtime_wait) UniversalOracleBase(_aggregator) {
+    constructor(address _sequencerAggregator, uint256 _downtime_wait) {
         require(_sequencerAggregator != address(0), SequencerAggregatorZeroAddress());
         sequencerAggregator = IAggregatorV2V3(_sequencerAggregator);
 
@@ -23,7 +23,7 @@ contract L2SequencerChecker is UniversalOracleBase, IL2SequencerChecker {
     }
 
 
-    function _chainUptimeCheck() internal override view {
+    function _chainUptimeCheck() internal virtual override view {
         (, int256 answer, uint256 startedAt , , ) = sequencerAggregator.latestRoundData();
 
         bool isSequncerUp = answer == 0;
