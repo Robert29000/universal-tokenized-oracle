@@ -20,31 +20,22 @@ abstract contract UniversalOracleBase is Ownable, IUniversalOracleBase {
     }
 
     function _price() internal virtual view returns (uint256) {
-        _chainUptimeCheck();
-        _corporatePauseCheck();
+        _beforeRead();
 
-        (, int256 price, , uint256 updatedAt, ) = aggregator.latestRoundData();
+        RoundData memory round;
+        (round.roundId, round.answer, round.startedAt, round.updatedAt, round.answeredInRound) = aggregator.latestRoundData();
 
-        _checkStaleness(updatedAt);
-        _checkPrice(price);
+        _afterRead(round);
 
-        return uint256(price);
+        return uint256(round.answer);
     }
 
-    function _chainUptimeCheck() internal virtual view {
-
-    }
-
-    function _corporatePauseCheck() internal virtual view {
+    function _beforeRead() internal virtual view {
 
     }
 
-    function _checkStaleness(uint256 _updatedAt) internal virtual view {
-
-    }
-
-    function _checkPrice(int256 price) internal virtual view {
-        require(price > 0, PriceZero());
+    function _afterRead(RoundData memory _round) internal virtual view {
+        require(_round.answer > 0, PriceZero());
     }
 
     function decimals() external virtual override view returns (uint8) {

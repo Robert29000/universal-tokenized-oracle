@@ -14,7 +14,9 @@ abstract contract CorporatePauseChecker is UniversalOracleBase, ICorporatePauseC
         _setPauseConfigurator(_pauseConfigurator);
     }
 
-    function _corporatePauseCheck() internal virtual override view {
+    function _beforeRead() internal virtual override view {
+        super._beforeRead();
+
         bool isPaused = pauseConfigurator.isPaused();
         require(!isPaused, CorporatePaused());
     }

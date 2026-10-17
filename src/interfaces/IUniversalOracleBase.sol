@@ -3,6 +3,14 @@ pragma solidity ^0.8.28;
 
 interface IUniversalOracleBase {
 
+    struct RoundData {
+    uint80 roundId;
+    int256 answer;
+    uint256 startedAt;
+    uint256 updatedAt;
+    uint80 answeredInRound;
+}
+
     error AggregatorZeroAddress();
     error PriceZero();
 

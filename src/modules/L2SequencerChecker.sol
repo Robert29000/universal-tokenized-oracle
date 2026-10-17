@@ -23,7 +23,9 @@ abstract contract L2SequencerChecker is UniversalOracleBase, IL2SequencerChecker
     }
 
 
-    function _chainUptimeCheck() internal virtual override view {
+    function _beforeRead() internal virtual override view {
+        super._beforeRead();
+
         (, int256 answer, uint256 startedAt , , ) = sequencerAggregator.latestRoundData();
 
         bool isSequncerUp = answer == 0;

@@ -26,10 +26,12 @@ abstract contract StalenessChecker is UniversalOracleBase, IStalenessChecker {
         reopenTimeWait = _reopenTimeWait;
     }
 
-    function _checkStaleness(uint256 _updatedAt) internal virtual override view {
-        require(_updatedAt + maxStaleness >= block.timestamp, MaxStalenessReached());
+    function _afterRead(RoundData memory _round) internal virtual override view {
+        super._afterRead(_round);
 
-        if (_updatedAt + tradingStaleness < block.timestamp) {
+        require(_round.updatedAt + maxStaleness >= block.timestamp, MaxStalenessReached());
+
+        if (_round.updatedAt + tradingStaleness < block.timestamp) {
             (uint256 dstStartTimestamp, uint256 dstEndTimestamp) = _getDSTBoundaries(block.timestamp);
 
             require(ETTimestamp.isETWeekendTrading(block.timestamp, dstStartTimestamp, dstEndTimestamp, reopenTimeWait), TradingStalenessReached());
