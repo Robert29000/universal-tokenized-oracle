@@ -34,7 +34,12 @@ abstract contract StalenessChecker is UniversalOracleBase, IStalenessChecker {
         if (_round.updatedAt + tradingStaleness < block.timestamp) {
             (uint256 dstStartTimestamp, uint256 dstEndTimestamp) = _getDSTBoundaries(block.timestamp);
 
-            require(ETTimestamp.isETWeekendTrading(block.timestamp, dstStartTimestamp, dstEndTimestamp, reopenTimeWait), TradingStalenessReached());
+            if (!ETTimestamp.isETWeekendTrading(block.timestamp, dstStartTimestamp, dstEndTimestamp, reopenTimeWait)) {
+                revert TradingStalenessReached();
+            } else {
+                uint256 lastFridayCloseInUTC = ETTimestamp.getLastETFridayCloseInUTC(block.timestamp, dstStartTimestamp, dstEndTimestamp);
+                require(_round.updatedAt + tradingStaleness >= lastFridayCloseInUTC, TradingStalenessReached());
+            }
         }
     }
 

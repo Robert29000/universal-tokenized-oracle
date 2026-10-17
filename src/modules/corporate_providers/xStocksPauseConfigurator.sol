@@ -69,7 +69,7 @@ contract xStocksPauseConfigurator is Ownable, IPauseConfigurator {
                 return block.timestamp + pause_window > newMultiplierActivationTime;
             } else {
 
-                return newMultiplierActivationTime + pause_window < block.timestamp;
+                return newMultiplierActivationTime + pause_window > block.timestamp;
             }
         }
 

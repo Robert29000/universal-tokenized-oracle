@@ -8,6 +8,9 @@ library ETTimestamp {
     uint256 constant EST_OFFSET = 5 hours;
     uint256 constant EDT_OFFSET = 4 hours;
 
+    uint256 constant SATURDAY = 5; // Monday = 0
+
+
     uint256 constant FRIDAY_CLOSE  = 4 days + 20 hours; // Friday 20:00
     uint256 constant SUNDAY_REOPEN = 6 days + 20 hours; // Sunday 20:00
     uint256 constant WEEK          = 7 days;
@@ -86,6 +89,20 @@ library ETTimestamp {
         return sinceReopen < _gracePeriod;
     }
 
+    /// @return UTC timestamp of the most recent Friday 20:00 ET close at or before _timestamp
+    function getLastETFridayCloseInUTC(uint256 _timestamp, uint256 dstStartTimestamp, uint256 dstEndTimestamp) internal pure returns (uint256) {
+        uint256 daysSinceSaturday = (UnixTimestamp.getWeekday(_timestamp) + 7 - SATURDAY) % 7;
+        uint256 saturdayUTC = _timestamp - _timestamp % 1 days - daysSinceSaturday * 1 days;
+
+        uint256 closeUTC = _adjustedUTCForETOffset(saturdayUTC, dstStartTimestamp, dstEndTimestamp);
+
+        if (closeUTC > _timestamp) {
+            closeUTC = _adjustedUTCForETOffset(saturdayUTC - WEEK, dstStartTimestamp, dstEndTimestamp);
+        }
+
+        return closeUTC;
+    }
+
     function getETOffset(uint256 _timestamp, uint256 dstStartTimestamp, uint256 dstEndTimestamp) internal pure returns (uint256) {
         if (_timestamp >= dstStartTimestamp && _timestamp < dstEndTimestamp) {
             return EDT_OFFSET;
@@ -99,4 +116,10 @@ library ETTimestamp {
         return _timestamp - offset;
     }
 
+    function _adjustedUTCForETOffset(uint256 _timestamp, uint256 dstStartTimestamp, uint256 dstEndTimestamp) internal pure returns (uint256) {
+        if (getETOffset(_timestamp, dstStartTimestamp, dstEndTimestamp) == EST_OFFSET) {
+            return _timestamp + 1 hours;
+        }
+        return _timestamp;
+    }
 }
