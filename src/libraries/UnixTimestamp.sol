@@ -14,7 +14,7 @@ library UnixTimestamp {
     error InvalidYear();
     /// @notice The month is less than 1 or greater than 12.
     error InvalidMonth();
-    /// @notice The day is less than 1 or greater than 31.
+    /// @notice The day is less than 1 or greater than the number of days in the month.
     error InvalidDay();
 
     /// @notice Returns the UTC calendar date of a Unix timestamp.
@@ -47,15 +47,15 @@ library UnixTimestamp {
 
     /// @notice Returns the Unix timestamp of 00:00:00 UTC on a calendar date.
     /// @dev Reverts with `InvalidYear` if `_year` is not in [1970, 9999], `InvalidMonth` if `_month` is not
-    ///      in [1, 12], and `InvalidDay` if `_day` is not in [1, 31].
+    ///      in [1, 12], and `InvalidDay` if `_day` is not in [1, `_daysInMonth(_year, _month)`].
     /// @param _year The calendar year, from 1970 to 9999.
     /// @param _month The month, from 1 to 12.
-    /// @param _day The day of the month, from 1 to 31.
+    /// @param _day The day of the month, from 1 to the number of days in the month.
     /// @return Unix timestamp in seconds of the start (00:00:00 UTC) of the date.
     function getTimestamp(uint256 _year, uint256 _month, uint256 _day) internal pure returns (uint256) {
         require(_year >= 1970 && _year <= 9999, InvalidYear());
         require(_month >= 1 && _month <= 12, InvalidMonth());
-        require(_day >= 1 && _day <= 31, InvalidDay());
+        require(_day >= 1 && _day <= _daysInMonth(_year, _month), InvalidDay());
 
         uint256 y = _year - (_month <= 2 ? 1 : 0);
 
@@ -85,5 +85,29 @@ library UnixTimestamp {
     /// @return The weekday, from 0 (Monday) to 6 (Sunday).
     function getWeekday(uint256 _timestamp) internal pure returns (uint256) {
         return (_timestamp / 86400 + 3) % 7;
+    }
+
+    /// @notice Returns the number of days in a month of the proleptic Gregorian calendar.
+    /// @dev Does not validate its inputs: any `_month` other than 2, 4, 6, 9 or 11 returns 31.
+    ///      `getTimestamp` checks `_month` before calling it.
+    /// @param _year The calendar year, used only for February.
+    /// @param _month The month, from 1 to 12.
+    /// @return The number of days in the month: 28 to 31.
+    function _daysInMonth(uint256 _year, uint256 _month) internal pure returns (uint256) {
+        if (_month == 2) {
+            return _isLeapYear(_year) ? 29 : 28;
+        }
+        if (_month == 4 || _month == 6 || _month == 9 || _month == 11) {
+            return 30;
+        }
+        return 31;
+    }
+
+    /// @notice Returns true if a year is a leap year in the proleptic Gregorian calendar.
+    /// @dev A year is a leap year if it is divisible by 4 and not by 100, or if it is divisible by 400.
+    /// @param _year The calendar year.
+    /// @return True if `_year` has 366 days.
+    function _isLeapYear(uint256 _year) internal pure returns (bool) {
+        return (_year % 4 == 0 && _year % 100 != 0) || _year % 400 == 0;
     }
 }
