@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 /// @title IL2SequencerChecker
 /// @author Robert29000
+/// @notice Errors, events and external functions of the L2 sequencer module.
 interface IL2SequencerChecker {
     /// @notice The sequencer uptime feed address is the zero address.
     error SequencerAggregatorZeroAddress();
