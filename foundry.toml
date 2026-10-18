@@ -9,3 +9,15 @@ remappings = [
 ]
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
+
+# Differential tests against Python (test/differential/). Never enable ffi in the default profile.
+#   FOUNDRY_PROFILE=differential forge test
+[profile.differential]
+ffi = true
+evm_version = "cancun" # also used for the bytecode executed by the Python (py-evm / titanoboa) harness
+out = "out-differential"
+cache_path = "cache-differential"
+match_path = "test/differential/*.t.sol"
+
+[profile.differential.fuzz]
+runs = 1000

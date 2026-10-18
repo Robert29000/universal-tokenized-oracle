@@ -48,8 +48,8 @@ abstract contract L2SequencerChecker is UniversalOracleBase, IL2SequencerChecker
 
         (, int256 answer, uint256 startedAt , , ) = sequencerAggregator.latestRoundData();
 
-        bool isSequncerUp = answer == 0;
-        require(isSequncerUp, SequencerDown());
+        bool isSequencerUp = answer == 0;
+        require(isSequencerUp, SequencerDown());
         require(startedAt + downtimeWait <= block.timestamp, GracePeriodNotOver());
     }
 

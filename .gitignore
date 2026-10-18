@@ -18,3 +18,14 @@ docs/
 .env
 .env.*
 !.env.example
+
+# Differential testing (test/differential)
+.venv/
+out-differential/
+cache-differential/
+.hypothesis/
+__pycache__/
+.pytest_cache/
+
+# OS files
+.DS_Store

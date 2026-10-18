@@ -17,7 +17,7 @@ import { IPauseConfigurator } from "./corporate_providers/interfaces/IPauseConfi
 ///      The owner can replace the configurator at any time.
 abstract contract CorporatePauseChecker is UniversalOracleBase, ICorporatePauseChecker {
 
-    /// @notice The adapter that reports the pause state of the corporate provider.
+    /// @inheritdoc ICorporatePauseChecker
     IPauseConfigurator public pauseConfigurator;
     
     /// @notice Sets the initial pause configurator.
@@ -36,10 +36,8 @@ abstract contract CorporatePauseChecker is UniversalOracleBase, ICorporatePauseC
         require(!isPaused, CorporatePaused());
     }
 
-    /// @notice Replaces the pause configurator.
-    /// @dev Only the owner can call this function. Reverts with `PauseConfiguratorZeroAddress` or
-    ///      `PauseConfiguratorEqualCurrent`. Emits `PauseConfiguratorSet`.
-    /// @param _pauseConfigurator Address of the new `IPauseConfigurator` implementation.
+    /// @inheritdoc ICorporatePauseChecker
+    /// @dev Only the owner can call this function. Validation and events are in `_setPauseConfigurator`.
     function setPauseConfigurator(address _pauseConfigurator) external onlyOwner {
         _setPauseConfigurator(_pauseConfigurator);
     }

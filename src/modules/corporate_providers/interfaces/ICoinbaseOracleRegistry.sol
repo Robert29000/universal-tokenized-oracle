@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity ^0.8.30;
 
 /// @title  IOracleRegistry
 /// @notice Interface Chainlink queries to obtain per-token oracle parameters for

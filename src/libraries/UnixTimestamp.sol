@@ -1,12 +1,30 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.28;
 
+/// @title UnixTimestamp
+/// @author Robert29000
+/// @notice Converts between Unix timestamps and proleptic Gregorian calendar dates, and returns the day of the week.
+/// @dev All timestamps are in seconds since 1970-01-01 00:00:00 UTC. The library does not apply any
+///      time zone: the date and weekday are those of the UTC day of the timestamp. To get the values for
+///      another time zone, shift the timestamp first (see `ETTimestamp.toETTimestamp`).
+///      The conversions use the `civil_from_days` and `days_from_civil` algorithms of Howard Hinnant.
+///      Weekdays are numbered Monday = 0 to Sunday = 6.
 library UnixTimestamp {
 
+    /// @notice The year is less than 1970 or greater than 9999.
     error InvalidYear();
+    /// @notice The month is less than 1 or greater than 12.
     error InvalidMonth();
+    /// @notice The day is less than 1 or greater than 31.
     error InvalidDay();
 
+    /// @notice Returns the UTC calendar date of a Unix timestamp.
+    /// @dev Valid for all `uint256` timestamps that do not overflow the intermediate arithmetic
+    ///      (all practical values). The time of day is ignored.
+    /// @param _timestamp Unix timestamp in seconds.
+    /// @return year The calendar year (for example 2026).
+    /// @return month The month, from 1 (January) to 12 (December).
+    /// @return day The day of the month, from 1 to 31.
     function getDate(uint256 _timestamp) internal pure returns (uint256 year, uint256 month, uint256 day) {
         uint256 z = _timestamp / 86400;
         uint256 z_offset = z + 719468;
@@ -28,6 +46,15 @@ library UnixTimestamp {
     }
 
 
+    /// @notice Returns the Unix timestamp of 00:00:00 UTC on a calendar date.
+    /// @dev Reverts with `InvalidYear` if `_year` is not in [1970, 9999], `InvalidMonth` if `_month` is not
+    ///      in [1, 12], and `InvalidDay` if `_day` is not in [1, 31]. The day is not checked against the
+    ///      length of the month: a day after the end of the month rolls over into the next month
+    ///      (for example February 30 gives the timestamp of March 1 or 2).
+    /// @param _year The calendar year, from 1970 to 9999.
+    /// @param _month The month, from 1 to 12.
+    /// @param _day The day of the month, from 1 to 31.
+    /// @return Unix timestamp in seconds of the start (00:00:00 UTC) of the date.
     function getTimestamp(uint256 _year, uint256 _month, uint256 _day) internal pure returns (uint256) {
         require(_year >= 1970 && _year <= 9999, InvalidYear());
         require(_month >= 1 && _month <= 12, InvalidMonth());
@@ -48,10 +75,17 @@ library UnixTimestamp {
         return daysSinceEpoch * 1 days;
     }
 
+    /// @notice Returns true if the UTC day of a timestamp is a Saturday or a Sunday.
+    /// @param _timestamp Unix timestamp in seconds.
+    /// @return True if the weekday of `_timestamp` is Saturday (5) or Sunday (6).
     function isWeekendDay(uint256 _timestamp) internal pure returns (bool) {
         return getWeekday(_timestamp) >= 5;
     }
 
+    /// @notice Returns the day of the week of the UTC day of a timestamp.
+    /// @dev 1970-01-01 was a Thursday, so the result is `(days since epoch + 3) % 7`.
+    /// @param _timestamp Unix timestamp in seconds.
+    /// @return The weekday, from 0 (Monday) to 6 (Sunday).
     function getWeekday(uint256 _timestamp) internal pure returns (uint256) {
         return (_timestamp / 86400 + 3) % 7;
     }
