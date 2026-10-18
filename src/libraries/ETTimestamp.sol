@@ -33,7 +33,7 @@ library ETTimestamp {
     /// @dev Weekly market reopen: Sunday 20:00 ET, as seconds after Monday 00:00 ET.
     uint256 constant SUNDAY_REOPEN = 6 days + 20 hours; // Sunday 20:00
     /// @dev Length of one week, in seconds.
-    uint256 constant WEEK          = 7 days;
+    uint256 constant WEEK = 7 days;
 
     /// @notice Returns the UTC timestamps when US daylight saving time starts and ends in a year.
     /// @dev Reverts with `UnixTimestamp.InvalidYear` if `_year` is not in [1970, 9999].
@@ -81,8 +81,8 @@ library ETTimestamp {
     /// @dev This is the calendar weekend (Saturday 00:00 ET to Monday 00:00 ET), not the market closure.
     ///      For the market closure use `isETWeekendTrading`.
     /// @param _timestamp Unix timestamp in seconds (UTC).
-    /// @param dstStartTimestamp DST start of the UTC year of `_timestamp`, from `getETTransitionBoundariesInUTC`.
-    /// @param dstEndTimestamp DST end of the UTC year of `_timestamp`, from `getETTransitionBoundariesInUTC`.
+    /// @param dstStartTimestamp DST start of the UTC year of `_timestamp`.
+    /// @param dstEndTimestamp DST end of the UTC year of `_timestamp`.
     /// @return True if the ET day of `_timestamp` is a Saturday or a Sunday.
     function isETWeekend(uint256 _timestamp, uint256 dstStartTimestamp, uint256 dstEndTimestamp) internal pure returns (bool) {
         uint256 etTimestamp = toETTimestamp(_timestamp, dstStartTimestamp, dstEndTimestamp);
@@ -94,8 +94,8 @@ library ETTimestamp {
     /// @dev Same as the 4-argument overload with a grace period of zero. The interval includes the close and
     ///      excludes the reopen.
     /// @param _timestamp Unix timestamp in seconds (UTC).
-    /// @param dstStartTimestamp DST start of the UTC year of `_timestamp`, from `getETTransitionBoundariesInUTC`.
-    /// @param dstEndTimestamp DST end of the UTC year of `_timestamp`, from `getETTransitionBoundariesInUTC`.
+    /// @param dstStartTimestamp DST start of the UTC year of `_timestamp`.
+    /// @param dstEndTimestamp DST end of the UTC year of `_timestamp`.
     /// @return True if the market is closed for the weekend at `_timestamp`.
     function isETWeekendTrading(uint256 _timestamp, uint256 dstStartTimestamp, uint256 dstEndTimestamp) internal pure returns (bool) {
         uint256 etTimestamp = toETTimestamp(_timestamp, dstStartTimestamp, dstEndTimestamp);
@@ -107,8 +107,8 @@ library ETTimestamp {
     ///         or less than `_gracePeriodOffset` seconds after the Sunday 20:00 ET reopen.
     /// @dev The grace period can continue into Monday and later days of the week.
     /// @param _timestamp Unix timestamp in seconds (UTC).
-    /// @param dstStartTimestamp DST start of the UTC year of `_timestamp`, from `getETTransitionBoundariesInUTC`.
-    /// @param dstEndTimestamp DST end of the UTC year of `_timestamp`, from `getETTransitionBoundariesInUTC`.
+    /// @param dstStartTimestamp DST start of the UTC year of `_timestamp`.
+    /// @param dstEndTimestamp DST end of the UTC year of `_timestamp`.
     /// @param _gracePeriodOffset Grace period after the Sunday 20:00 ET reopen, in seconds.
     /// @return True if the market is closed for the weekend, or the reopen grace period is not over, at `_timestamp`.
     function isETWeekendTrading(uint256 _timestamp, uint256 dstStartTimestamp, uint256 dstEndTimestamp, uint256 _gracePeriodOffset) internal pure returns (bool) {
@@ -151,8 +151,8 @@ library ETTimestamp {
     ///      Reverts on underflow if `_timestamp` is before 1970-01-03 01:00 UTC (the first Friday 20:00 EST close
 ///      after the Unix epoch). This does not affect current timestamps.
     /// @param _timestamp Unix timestamp in seconds (UTC).
-    /// @param dstStartTimestamp DST start of the UTC year of `_timestamp`, from `getETTransitionBoundariesInUTC`.
-    /// @param dstEndTimestamp DST end of the UTC year of `_timestamp`, from `getETTransitionBoundariesInUTC`.
+    /// @param dstStartTimestamp DST start of the UTC year of `_timestamp`.
+    /// @param dstEndTimestamp DST end of the UTC year of `_timestamp`.
     /// @return UTC timestamp of the most recent Friday 20:00 ET close at or before `_timestamp`.
     function getLastETFridayCloseInUTC(uint256 _timestamp, uint256 dstStartTimestamp, uint256 dstEndTimestamp) internal pure returns (uint256) {
         uint256 daysSinceSaturday = (UnixTimestamp.getWeekday(_timestamp) + 7 - SATURDAY) % 7;
@@ -170,8 +170,8 @@ library ETTimestamp {
     /// @notice Returns the ET offset from UTC in force at a timestamp.
     /// @dev Returns `EDT_OFFSET` if `dstStartTimestamp <= _timestamp < dstEndTimestamp`, else `EST_OFFSET`.
     /// @param _timestamp Unix timestamp in seconds (UTC).
-    /// @param dstStartTimestamp DST start of the UTC year of `_timestamp`, from `getETTransitionBoundariesInUTC`.
-    /// @param dstEndTimestamp DST end of the UTC year of `_timestamp`, from `getETTransitionBoundariesInUTC`.
+    /// @param dstStartTimestamp DST start of the UTC year of `_timestamp`.
+    /// @param dstEndTimestamp DST end of the UTC year of `_timestamp`.
     /// @return The offset in seconds: `EDT_OFFSET` or `EST_OFFSET`.
     function getETOffset(uint256 _timestamp, uint256 dstStartTimestamp, uint256 dstEndTimestamp) internal pure returns (uint256) {
         if (_timestamp >= dstStartTimestamp && _timestamp < dstEndTimestamp) {
@@ -185,8 +185,8 @@ library ETTimestamp {
     /// @dev The result is `_timestamp` minus the ET offset in force at `_timestamp`. Its UTC calendar fields are the
     ///      ET wall-clock values. Reverts on underflow if `_timestamp` is less than the offset.
     /// @param _timestamp Unix timestamp in seconds (UTC).
-    /// @param dstStartTimestamp DST start of the UTC year of `_timestamp`, from `getETTransitionBoundariesInUTC`.
-    /// @param dstEndTimestamp DST end of the UTC year of `_timestamp`, from `getETTransitionBoundariesInUTC`.
+    /// @param dstStartTimestamp DST start of the UTC year of `_timestamp`.
+    /// @param dstEndTimestamp DST end of the UTC year of `_timestamp`.
     /// @return The ET timestamp, in seconds.
     function toETTimestamp(uint256 _timestamp, uint256 dstStartTimestamp, uint256 dstEndTimestamp) internal pure returns (uint256) {
         uint256 offset = getETOffset(_timestamp, dstStartTimestamp, dstEndTimestamp);
@@ -197,8 +197,8 @@ library ETTimestamp {
     /// @dev Adds 1 hour if `getETOffset(_timestamp)` is `EST_OFFSET`, else returns `_timestamp` unchanged.
     ///      Used to convert Saturday 00:00 UTC (Friday 20:00 EDT) to Friday 20:00 ET.
     /// @param _timestamp Unix timestamp in seconds (UTC), calculated with the EDT offset.
-    /// @param dstStartTimestamp DST start of the UTC year of `_timestamp`, from `getETTransitionBoundariesInUTC`.
-    /// @param dstEndTimestamp DST end of the UTC year of `_timestamp`, from `getETTransitionBoundariesInUTC`.
+    /// @param dstStartTimestamp DST start of the UTC year of `_timestamp`.
+    /// @param dstEndTimestamp DST end of the UTC year of `_timestamp`.
     /// @return The UTC timestamp of the same ET wall-clock time under the offset in force.
     function _adjustedUTCForETOffset(uint256 _timestamp, uint256 dstStartTimestamp, uint256 dstEndTimestamp) internal pure returns (uint256) {
         if (getETOffset(_timestamp, dstStartTimestamp, dstEndTimestamp) == EST_OFFSET) {

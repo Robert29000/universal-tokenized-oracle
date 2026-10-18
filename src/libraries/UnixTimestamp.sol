@@ -5,8 +5,7 @@ pragma solidity ^0.8.28;
 /// @author Robert29000
 /// @notice Converts between Unix timestamps and proleptic Gregorian calendar dates, and returns the day of the week.
 /// @dev All timestamps are in seconds since 1970-01-01 00:00:00 UTC. The library does not apply any
-///      time zone: the date and weekday are those of the UTC day of the timestamp. To get the values for
-///      another time zone, shift the timestamp first (see `ETTimestamp.toETTimestamp`).
+///      time zone: the date and weekday are those of the UTC day of the timestamp.
 ///      The conversions use the `civil_from_days` and `days_from_civil` algorithms of Howard Hinnant.
 ///      Weekdays are numbered Monday = 0 to Sunday = 6.
 library UnixTimestamp {
@@ -48,9 +47,7 @@ library UnixTimestamp {
 
     /// @notice Returns the Unix timestamp of 00:00:00 UTC on a calendar date.
     /// @dev Reverts with `InvalidYear` if `_year` is not in [1970, 9999], `InvalidMonth` if `_month` is not
-    ///      in [1, 12], and `InvalidDay` if `_day` is not in [1, 31]. The day is not checked against the
-    ///      length of the month: a day after the end of the month rolls over into the next month
-    ///      (for example February 30 gives the timestamp of March 1 or 2).
+    ///      in [1, 12], and `InvalidDay` if `_day` is not in [1, 31].
     /// @param _year The calendar year, from 1970 to 9999.
     /// @param _month The month, from 1 to 12.
     /// @param _day The day of the month, from 1 to 31.
