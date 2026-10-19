@@ -1,0 +1,6 @@
+# Python harness for the differential tests (see ../README.md).
+# Install into the project virtualenv:  python3 -m venv .venv && .venv/bin/pip install -r test/differential/python/requirements.txt
+titanoboa==0.2.8      # in-process py-evm runner; used here to deploy/call Foundry-compiled bytecode
+hypothesis==6.170.1
+pytest==9.1.1
+tzdata                # fallback IANA tz database for platforms without /usr/share/zoneinfo

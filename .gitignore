@@ -29,3 +29,7 @@ __pycache__/
 
 # OS files
 .DS_Store
+
+# solidity-auditor skill (scan output and temporary bundles)
+.solidity-auditor/
+.audit-*/
