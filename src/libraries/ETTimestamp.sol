@@ -149,7 +149,7 @@ library ETTimestamp {
     ///      finds the start of the last UTC Saturday at or before `_timestamp`, applies the ET offset in force at
     ///      that instant, and goes back one week if the result is after `_timestamp`.
     ///      Reverts on underflow if `_timestamp` is before 1970-01-03 01:00 UTC (the first Friday 20:00 EST close
-///      after the Unix epoch). This does not affect current timestamps.
+    ///      after the Unix epoch). This does not affect current timestamps.
     /// @param _timestamp Unix timestamp in seconds (UTC).
     /// @param dstStartTimestamp DST start of the UTC year of `_timestamp`.
     /// @param dstEndTimestamp DST end of the UTC year of `_timestamp`.

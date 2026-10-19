@@ -20,6 +20,7 @@ import {IStalenessChecker} from "./interfaces/IStalenessChecker.sol";
 ///         - The price was fresh at the last Friday 20:00 ET close:
 ///           `updatedAt + tradingStaleness >= lastFridayClose`.
 ///         Otherwise it reverts with `TradingStalenessReached`.
+///      Step 2 is in the virtual `_checkTradingStaleness` function, so derived modules can extend it.
 ///      Daylight saving time is handled with the US rules for the UTC year of `block.timestamp`
 ///      (see `ETTimestamp`).
 abstract contract StalenessChecker is UniversalOracleBase, IStalenessChecker {
@@ -51,24 +52,36 @@ abstract contract StalenessChecker is UniversalOracleBase, IStalenessChecker {
     }
 
     /// @inheritdoc UniversalOracleBase
-    /// @dev Calls `super._afterRead(_round)`, then applies the `maxStaleness` and `tradingStaleness`
-    ///      checks on `_round.updatedAt`. A price older than `tradingStaleness` is still accepted during the
-    ///      weekend closure and for `reopenTimeWait` seconds after the Sunday 20:00 ET reopen, as described
-    ///      in the contract documentation.
+    /// @dev Calls `super._afterRead(_round)`, then:
+    ///      1. Reverts with `MaxStalenessReached` if `_round.updatedAt + maxStaleness < block.timestamp`.
+    ///      2. Calls `_checkTradingStaleness(_round)` if `_round.updatedAt + tradingStaleness < block.timestamp`.
+    ///      A price that is not older than `tradingStaleness` is always accepted.
     function _afterRead(RoundData memory _round) internal virtual override view {
         super._afterRead(_round);
 
         require(_round.updatedAt + maxStaleness >= block.timestamp, MaxStalenessReached());
 
         if (_round.updatedAt + tradingStaleness < block.timestamp) {
-            (uint256 dstStartTimestamp, uint256 dstEndTimestamp) = _getDSTBoundaries(block.timestamp);
+            _checkTradingStaleness(_round);
+        }
+    }
 
-            if (!ETTimestamp.isETWeekendTrading(block.timestamp, dstStartTimestamp, dstEndTimestamp, reopenTimeWait)) {
-                revert TradingStalenessReached();
-            } else {
-                uint256 lastFridayCloseInUTC = ETTimestamp.getLastETFridayCloseInUTC(block.timestamp, dstStartTimestamp, dstEndTimestamp);
-                require(_round.updatedAt + tradingStaleness >= lastFridayCloseInUTC, TradingStalenessReached());
-            }
+    /// @notice Checks if a price older than `tradingStaleness` can be accepted because the market is closed.
+    /// @dev `_afterRead` calls this function only if `_round.updatedAt + tradingStaleness < block.timestamp`.
+    ///      `maxStaleness` is already checked. Reverts with `TradingStalenessReached` if one of these is true:
+    ///      - `block.timestamp` is not in the weekend closure, and not less than `reopenTimeWait` seconds
+    ///        after the Sunday 20:00 ET reopen (`ETTimestamp.isETWeekendTrading`).
+    ///      - The price was already older than `tradingStaleness` at the last Friday 20:00 ET close:
+    ///        `_round.updatedAt + tradingStaleness < lastFridayClose`.
+    /// @param _round The round data returned by `aggregator.latestRoundData()`.
+    function _checkTradingStaleness(RoundData memory _round) internal virtual view {
+        (uint256 dstStartTimestamp, uint256 dstEndTimestamp) = _getDSTBoundaries(block.timestamp);
+
+        if (!ETTimestamp.isETWeekendTrading(block.timestamp, dstStartTimestamp, dstEndTimestamp, reopenTimeWait)) {
+            revert TradingStalenessReached();
+        } else {
+            uint256 lastFridayCloseInUTC = ETTimestamp.getLastETFridayCloseInUTC(block.timestamp, dstStartTimestamp, dstEndTimestamp);
+            require(_round.updatedAt + tradingStaleness >= lastFridayCloseInUTC, TradingStalenessReached());
         }
     }
 
