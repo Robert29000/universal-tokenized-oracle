@@ -87,6 +87,54 @@ library UnixTimestamp {
         return (_timestamp / 86400 + 3) % 7;
     }
 
+    /// @notice Returns the calendar date of the day after a date.
+    /// @dev Reverts with `InvalidYear` if `_year` is 9999 or greater, so the result is never after year 9999.
+    ///      This also rejects every date in 9999, not only 9999-12-31.
+    ///      Does not validate `_month` or `_day`: the caller must pass a valid date (see `getTimestamp`).
+    /// @param _year The calendar year, less than 9999.
+    /// @param _month The month, from 1 to 12.
+    /// @param _day The day of the month, from 1 to the number of days in the month.
+    /// @return The year of the next day.
+    /// @return The month of the next day, from 1 to 12.
+    /// @return The day of the month of the next day.
+    function getNextDate(uint256 _year, uint256 _month, uint256 _day) internal pure returns (uint256, uint256, uint256) {
+        require (_year < 9999, InvalidYear());
+        
+        if (_day < _daysInMonth(_year, _month)) {
+            return (_year, _month, _day + 1);
+        } else {
+            if (_month < 12) {
+                return (_year, _month + 1, 1);
+            } else {
+                return (_year + 1, 1, 1);
+            }
+        }
+    }
+
+    /// @notice Returns the calendar date of the day before a date.
+    /// @dev Reverts with `InvalidYear` if `_year` is less than 1971, so the result is never before year 1970.
+    ///      This also rejects every date in 1970, not only 1970-01-01.
+    ///      Does not validate `_month` or `_day`: the caller must pass a valid date (see `getTimestamp`).
+    /// @param _year The calendar year, 1971 or greater.
+    /// @param _month The month, from 1 to 12.
+    /// @param _day The day of the month, from 1 to the number of days in the month.
+    /// @return The year of the previous day.
+    /// @return The month of the previous day, from 1 to 12.
+    /// @return The day of the month of the previous day.
+    function getPrevDate(uint256 _year, uint256 _month, uint256 _day) internal pure returns (uint256, uint256, uint256) {
+        require(_year >= 1971, InvalidYear());
+
+        if (_day > 1) {
+            return (_year, _month, _day - 1);
+        } else {
+            if (_month > 1) {
+                return (_year, _month - 1, _daysInMonth(_year, _month - 1));
+            } else {
+                return (_year - 1, 12, 31);
+            }
+        }
+    }
+
     /// @notice Returns the number of days in a month of the proleptic Gregorian calendar.
     /// @dev Does not validate its inputs: any `_month` other than 2, 4, 6, 9 or 11 returns 31.
     ///      `getTimestamp` checks `_month` before calling it.

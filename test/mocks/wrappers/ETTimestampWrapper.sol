@@ -14,30 +14,6 @@ contract ETTimestampWrapper {
         return ETTimestamp.isETWeekend(_timestamp, _dstStart, _dstEnd);
     }
 
-    function isETWeekendTrading(uint256 _timestamp, uint256 _dstStart, uint256 _dstEnd) external pure returns (bool) {
-        return ETTimestamp.isETWeekendTrading(_timestamp, _dstStart, _dstEnd);
-    }
-
-    function isETWeekendTradingWithGrace(uint256 _timestamp, uint256 _dstStart, uint256 _dstEnd, uint256 _grace)
-        external
-        pure
-        returns (bool)
-    {
-        return ETTimestamp.isETWeekendTrading(_timestamp, _dstStart, _dstEnd, _grace);
-    }
-
-    function checkETWeekendTrading(uint256 _etTimestamp, uint256 _grace) external pure returns (bool) {
-        return ETTimestamp._checkETWeekendTrading(_etTimestamp, _grace);
-    }
-
-    function getLastETFridayCloseInUTC(uint256 _timestamp, uint256 _dstStart, uint256 _dstEnd)
-        external
-        pure
-        returns (uint256)
-    {
-        return ETTimestamp.getLastETFridayCloseInUTC(_timestamp, _dstStart, _dstEnd);
-    }
-
     function getETOffset(uint256 _timestamp, uint256 _dstStart, uint256 _dstEnd) external pure returns (uint256) {
         return ETTimestamp.getETOffset(_timestamp, _dstStart, _dstEnd);
     }
@@ -51,6 +27,6 @@ contract ETTimestampWrapper {
         pure
         returns (uint256)
     {
-        return ETTimestamp._adjustedUTCForETOffset(_timestamp, _dstStart, _dstEnd);
+        return ETTimestamp.adjustedUTCForETOffset(_timestamp, _dstStart, _dstEnd);
     }
 }

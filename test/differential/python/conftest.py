@@ -44,6 +44,9 @@ settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "default"))
 EXHAUSTIVE = os.environ.get("DIFF_EXHAUSTIVE") == "1"
 
 
+U256 = "uint256"
+
+
 def selector(signature: str) -> bytes:
     return keccak(text=signature)[:4]
 
@@ -88,11 +91,13 @@ def _build():
     subprocess.run([_forge(), "build", "--quiet"], cwd=ROOT, env=env, check=True)
 
 
-def _deploy(name: str) -> EvmContract:
+def _deploy(name: str, ctor_types: list[str] | None = None, ctor_args: list | None = None) -> EvmContract:
     artifact = OUT / f"{name}.sol" / f"{name}.json"
     if not artifact.exists():
         pytest.exit(f"missing artifact {artifact}; run `FOUNDRY_PROFILE=differential forge build`", returncode=2)
     bytecode = bytes.fromhex(json.loads(artifact.read_text())["bytecode"]["object"].removeprefix("0x"))
+    if ctor_types:
+        bytecode += encode(ctor_types, ctor_args)
     address, _ = boa.env.deploy_code(bytecode=bytecode)
     return EvmContract(address)
 
@@ -105,3 +110,12 @@ def unix(_build) -> EvmContract:
 @pytest.fixture(scope="session")
 def et(_build) -> EvmContract:
     return _deploy("ETTimestampWrapper")
+
+
+@pytest.fixture(scope="session")
+def staleness(_build) -> EvmContract:
+    """StalenessCheckerWrapper, for the weekend helpers. They are pure, so the constructor arguments
+    (aggregator 0x...01, maxStaleness 1, tradingStaleness 1, reopenTimeWait 0) do not matter."""
+    return _deploy(
+        "StalenessCheckerWrapper", ["address", U256, U256, U256], ["0x" + "00" * 19 + "01", 1, 1, 0]
+    )

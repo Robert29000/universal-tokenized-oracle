@@ -14,6 +14,8 @@ Usage:
   ffi_reference.py et <ts> <grace>
       -> (uint256 offset, uint256 etTimestamp, bool isETWeekend, bool isETWeekendTrading,
           bool isETWeekendTradingWithGrace, uint256 lastFridayCloseUTC, uint256 adjustedUTC)
+      isETWeekendTrading is the StalenessChecker weekend check with grace 0, isETWeekendTradingWithGrace
+      the same check with <grace>.
 """
 
 from __future__ import annotations

@@ -21,6 +21,13 @@ contract StalenessCheckerTest is Test {
     uint256 internal constant TRADING = 1 hours;
     uint256 internal constant REOPEN = 30 minutes;
 
+    uint256 internal constant FRIDAY_CLOSE = 4 days + 20 hours;
+    uint256 internal constant SUNDAY_REOPEN = 6 days + 20 hours;
+    uint256 internal constant WEEK = 7 days;
+
+    /// @dev 1970-01-05 00:00 is a Monday. Used as a synthetic "ET" week origin for _checkETWeekendTrading.
+    uint256 internal constant SYNTHETIC_MONDAY = 4 days;
+
     // Wednesday 12:00 ET of the reference weeks
     uint256 internal constant EDT_WED_NOON = T.EDT_MON_0000 + 2 days + 12 hours;
     uint256 internal constant EST_WED_NOON = T.EST_MON_0000 + 2 days + 12 hours;
@@ -262,6 +269,184 @@ contract StalenessCheckerTest is Test {
         oracle.exposed_getDSTBoundaries(T.MAX_DATETIME + 1);
     }
 
+    // ================================================================== _isETWeekendTrading (no grace)
+
+    function test_isETWeekendTrading_EDTWeek() public view {
+        (uint256 s, uint256 e) = (T.DST_START_2024, T.DST_END_2024);
+        assertFalse(oracle.exposed_isETWeekendTrading(T.EDT_MON_0000, s, e, 0), "Mon 00:00");
+        assertFalse(oracle.exposed_isETWeekendTrading(T.EDT_FRI_2000 - 1, s, e, 0), "Fri 19:59:59");
+        assertTrue(oracle.exposed_isETWeekendTrading(T.EDT_FRI_2000, s, e, 0), "Fri 20:00");
+        assertTrue(oracle.exposed_isETWeekendTrading(T.EDT_SUN_2000 - 1, s, e, 0), "Sun 19:59:59");
+        assertFalse(oracle.exposed_isETWeekendTrading(T.EDT_SUN_2000, s, e, 0), "Sun 20:00");
+        assertFalse(oracle.exposed_isETWeekendTrading(T.EDT_NEXT_MON_0000 - 1, s, e, 0), "Sun 23:59:59");
+        assertFalse(oracle.exposed_isETWeekendTrading(T.EDT_NEXT_MON_0000, s, e, 0), "next Mon 00:00");
+    }
+
+    function test_isETWeekendTrading_ESTWeek() public view {
+        (uint256 s, uint256 e) = (T.DST_START_2024, T.DST_END_2024);
+        assertFalse(oracle.exposed_isETWeekendTrading(T.EST_FRI_2000 - 1, s, e, 0), "Fri 19:59:59");
+        assertTrue(oracle.exposed_isETWeekendTrading(T.EST_FRI_2000, s, e, 0), "Fri 20:00");
+        assertTrue(oracle.exposed_isETWeekendTrading(T.EST_SUN_2000 - 1, s, e, 0), "Sun 19:59:59");
+        assertFalse(oracle.exposed_isETWeekendTrading(T.EST_SUN_2000, s, e, 0), "Sun 20:00");
+    }
+
+    // ================================================================== _isETWeekendTrading (grace)
+
+    function test_isETWeekendTradingWithGrace_SundayReopen() public view {
+        (uint256 s, uint256 e) = (T.DST_START_2024, T.DST_END_2024);
+        uint256 grace = 30 minutes;
+        assertTrue(oracle.exposed_isETWeekendTrading(T.EDT_SUN_2000, s, e, grace), "reopen");
+        assertTrue(oracle.exposed_isETWeekendTrading(T.EDT_SUN_2000 + grace - 1, s, e, grace), "grace - 1");
+        assertFalse(oracle.exposed_isETWeekendTrading(T.EDT_SUN_2000 + grace, s, e, grace), "grace");
+    }
+
+    function test_isETWeekendTradingWithGrace_GraceSpillsIntoMonday() public view {
+        // A grace period longer than 4h (Sun 20:00 -> Mon 00:00) continues in the Mon-Fri branch.
+        (uint256 s, uint256 e) = (T.DST_START_2024, T.DST_END_2024);
+        uint256 grace = 5 hours;
+        assertTrue(oracle.exposed_isETWeekendTrading(T.EDT_NEXT_MON_0000 - 1, s, e, grace), "Sun 23:59:59");
+        assertTrue(oracle.exposed_isETWeekendTrading(T.EDT_NEXT_MON_0000, s, e, grace), "Mon 00:00");
+        assertTrue(oracle.exposed_isETWeekendTrading(T.EDT_NEXT_MON_0000 + 1 hours - 1, s, e, grace), "Mon 00:59:59");
+        assertFalse(oracle.exposed_isETWeekendTrading(T.EDT_NEXT_MON_0000 + 1 hours, s, e, grace), "Mon 01:00");
+    }
+
+    function test_isETWeekendTradingWithGrace_ESTWeek() public view {
+        (uint256 s, uint256 e) = (T.DST_START_2024, T.DST_END_2024);
+        uint256 grace = 1 hours;
+        assertTrue(oracle.exposed_isETWeekendTrading(T.EST_SUN_2000 + grace - 1, s, e, grace));
+        assertFalse(oracle.exposed_isETWeekendTrading(T.EST_SUN_2000 + grace, s, e, grace));
+    }
+
+    // ================================================================== _checkETWeekendTrading
+
+    function test_checkETWeekendTrading_Branches() public view {
+        uint256 m = SYNTHETIC_MONDAY;
+        // Branch 1: Mon 00:00 .. Fri 19:59:59, no grace
+        assertFalse(oracle.exposed_checkETWeekendTrading(m, 0), "Mon 00:00");
+        assertFalse(oracle.exposed_checkETWeekendTrading(m + FRIDAY_CLOSE - 1, 0), "Fri 19:59:59");
+        // Branch 2: Fri 20:00 .. Sun 19:59:59
+        assertTrue(oracle.exposed_checkETWeekendTrading(m + FRIDAY_CLOSE, 0), "Fri 20:00");
+        assertTrue(oracle.exposed_checkETWeekendTrading(m + SUNDAY_REOPEN - 1, 0), "Sun 19:59:59");
+        // Branch 3: Sun 20:00 .. Sun 23:59:59
+        assertFalse(oracle.exposed_checkETWeekendTrading(m + SUNDAY_REOPEN, 0), "Sun 20:00");
+        assertFalse(oracle.exposed_checkETWeekendTrading(m + WEEK - 1, 0), "Sun 23:59:59");
+    }
+
+    function test_checkETWeekendTrading_GraceInSundayBranch() public view {
+        uint256 m = SYNTHETIC_MONDAY;
+        assertTrue(oracle.exposed_checkETWeekendTrading(m + SUNDAY_REOPEN, 1), "sinceReopen 0 < 1");
+        assertFalse(oracle.exposed_checkETWeekendTrading(m + SUNDAY_REOPEN + 1, 1), "sinceReopen 1 < 1");
+        assertTrue(oracle.exposed_checkETWeekendTrading(m + WEEK - 1, 4 hours), "Sun 23:59:59, grace 4h");
+    }
+
+    function test_checkETWeekendTrading_GraceInWeekdayBranch() public view {
+        uint256 m = SYNTHETIC_MONDAY;
+        // Mon 00:00 is 4h after Sun 20:00
+        assertFalse(oracle.exposed_checkETWeekendTrading(m, 4 hours), "Mon 00:00, grace 4h");
+        assertTrue(oracle.exposed_checkETWeekendTrading(m, 4 hours + 1), "Mon 00:00, grace 4h+1");
+        // A grace covering the whole working week keeps the market "closed" until Fri 20:00.
+        assertTrue(oracle.exposed_checkETWeekendTrading(m + FRIDAY_CLOSE - 1, FRIDAY_CLOSE + 4 hours), "Fri 19:59:59");
+        assertFalse(oracle.exposed_checkETWeekendTrading(m + FRIDAY_CLOSE - 1, FRIDAY_CLOSE + 4 hours - 1), "Fri 19:59:59 b");
+    }
+
+    function test_checkETWeekendTrading_MaxGrace() public view {
+        uint256 m = SYNTHETIC_MONDAY;
+        assertTrue(oracle.exposed_checkETWeekendTrading(m, type(uint256).max));
+        assertTrue(oracle.exposed_checkETWeekendTrading(m + SUNDAY_REOPEN, type(uint256).max));
+    }
+
+    /// @dev Reference model: closed in [Fri 20:00, Sun 20:00) and during `grace` seconds after Sun 20:00.
+    function testFuzz_checkETWeekendTrading_MatchesModel(uint256 _et, uint256 _grace) public view {
+        _et = bound(_et, 0, type(uint128).max);
+        _grace = bound(_grace, 0, 2 * WEEK);
+        uint256 intoWeek = ((_et / 1 days + 3) % 7) * 1 days + (_et % 1 days);
+        uint256 sinceReopen = (intoWeek + WEEK - SUNDAY_REOPEN) % WEEK;
+        bool closed = intoWeek >= FRIDAY_CLOSE && intoWeek < SUNDAY_REOPEN;
+        bool expected = closed || sinceReopen < _grace;
+        assertEq(oracle.exposed_checkETWeekendTrading(_et, _grace), expected);
+    }
+
+    // ================================================================== _getLastETFridayCloseTimestampInUTC
+
+    function test_getLastETFridayCloseTimestampInUTC_ExactlyAtCloseEDT() public view {
+        (uint256 s, uint256 e) = (T.DST_START_2024, T.DST_END_2024);
+        assertEq(oracle.exposed_getLastETFridayCloseTimestampInUTC(T.EDT_FRI_2000, s, e), T.EDT_FRI_2000);
+    }
+
+    function test_getLastETFridayCloseTimestampInUTC_OneSecondBeforeCloseEDT() public view {
+        (uint256 s, uint256 e) = (T.DST_START_2024, T.DST_END_2024);
+        assertEq(oracle.exposed_getLastETFridayCloseTimestampInUTC(T.EDT_FRI_2000 - 1, s, e), T.EDT_FRI_2000 - WEEK);
+    }
+
+    function test_getLastETFridayCloseTimestampInUTC_ExactlyAtCloseEST() public view {
+        (uint256 s, uint256 e) = (T.DST_START_2024, T.DST_END_2024);
+        assertEq(oracle.exposed_getLastETFridayCloseTimestampInUTC(T.EST_FRI_2000, s, e), T.EST_FRI_2000);
+    }
+
+    function test_getLastETFridayCloseTimestampInUTC_SaturdayUTCBeforeCloseEST() public view {
+        // Sat 00:30 UTC == Fri 19:30 EST: same UTC Saturday, but close (01:00 UTC) is still in the future,
+        // so the `closeUTC > _timestamp` branch must step back one week.
+        (uint256 s, uint256 e) = (T.DST_START_2024, T.DST_END_2024);
+        assertEq(oracle.exposed_getLastETFridayCloseTimestampInUTC(T.EST_FRI_2000 - 30 minutes, s, e), T.EST_FRI_2000 - WEEK);
+        assertEq(oracle.exposed_getLastETFridayCloseTimestampInUTC(T.EST_FRI_2000 - 1, s, e), T.EST_FRI_2000 - WEEK);
+    }
+
+    function test_getLastETFridayCloseTimestampInUTC_MidWeekAndWeekend() public view {
+        (uint256 s, uint256 e) = (T.DST_START_2024, T.DST_END_2024);
+        // Wednesday -> previous Friday
+        assertEq(oracle.exposed_getLastETFridayCloseTimestampInUTC(T.EDT_MON_0000 + 2 days + 12 hours, s, e), T.EDT_FRI_2000 - WEEK);
+        // Saturday noon, Sunday 21:00 ET (Monday UTC), Monday 00:00 ET -> this Friday
+        assertEq(oracle.exposed_getLastETFridayCloseTimestampInUTC(T.EDT_FRI_2000 + 16 hours, s, e), T.EDT_FRI_2000);
+        assertEq(oracle.exposed_getLastETFridayCloseTimestampInUTC(T.EDT_SUN_2000 + 1 hours, s, e), T.EDT_FRI_2000);
+        assertEq(oracle.exposed_getLastETFridayCloseTimestampInUTC(T.EDT_NEXT_MON_0000, s, e), T.EDT_FRI_2000);
+        // Friday 23:59:59 UTC (Friday afternoon ET) -> previous Friday
+        assertEq(oracle.exposed_getLastETFridayCloseTimestampInUTC(T.EDT_FRI_2000 - 1, s, e), T.EDT_FRI_2000 - WEEK);
+    }
+
+    function test_getLastETFridayCloseTimestampInUTC_SpringForwardWeekend() public view {
+        (uint256 s, uint256 e) = (T.DST_START_2024, T.DST_END_2024);
+        uint256 friCloseEST = 1709946000; // Fri 2024-03-08 20:00 EST == Sat 2024-03-09 01:00 UTC
+        uint256 nextFriCloseEDT = 1710547200; // Fri 2024-03-15 20:00 EDT == Sat 2024-03-16 00:00 UTC
+        assertEq(oracle.exposed_getLastETFridayCloseTimestampInUTC(s + 5 hours, s, e), friCloseEST, "Sunday after switch");
+        assertEq(oracle.exposed_getLastETFridayCloseTimestampInUTC(nextFriCloseEDT - 1, s, e), friCloseEST, "Fri before next close");
+        assertEq(oracle.exposed_getLastETFridayCloseTimestampInUTC(nextFriCloseEDT, s, e), nextFriCloseEDT, "next close");
+    }
+
+    function test_getLastETFridayCloseTimestampInUTC_FallBackWeekend() public view {
+        (uint256 s, uint256 e) = (T.DST_START_2024, T.DST_END_2024);
+        uint256 friCloseEDT = 1730505600; // Fri 2024-11-01 20:00 EDT == Sat 2024-11-02 00:00 UTC
+        uint256 nextFriCloseEST = 1731114000; // Fri 2024-11-08 20:00 EST == Sat 2024-11-09 01:00 UTC
+        assertEq(oracle.exposed_getLastETFridayCloseTimestampInUTC(e + 6 hours, s, e), friCloseEDT, "Sunday after switch");
+        // Sat 00:30 UTC (still Fri in EST) -> step back one week, into the EDT regime
+        assertEq(oracle.exposed_getLastETFridayCloseTimestampInUTC(nextFriCloseEST - 30 minutes, s, e), friCloseEDT, "step back");
+        assertEq(oracle.exposed_getLastETFridayCloseTimestampInUTC(nextFriCloseEST, s, e), nextFriCloseEST, "next close");
+    }
+
+    function test_RevertWhen_getLastETFridayCloseTimestampInUTC_BeforeFirstSaturday() public {
+        // 1970-01-01 is a Thursday: there is no Saturday at or before it -> arithmetic underflow.
+        vm.expectRevert(stdError.arithmeticError);
+        oracle.exposed_getLastETFridayCloseTimestampInUTC(0, 0, 0);
+    }
+
+    function testFuzz_getLastETFridayCloseTimestampInUTC_IsMostRecentFridayClose(uint256 _ts) public view {
+        _ts = bound(_ts, T.JAN_01_2024, 4102444800); // 2024-01-01 .. 2100-01-01
+        (uint256 year,,) = UnixTimestamp.getDate(_ts);
+        (uint256 s, uint256 e) = ETTimestamp.getETTransitionBoundariesInUTC(year);
+
+        uint256 close = oracle.exposed_getLastETFridayCloseTimestampInUTC(_ts, s, e);
+        assertLe(close, _ts, "close in the future");
+        assertLt(_ts - close, WEEK + 1 hours, "close older than a week");
+
+        // The close is a Friday 20:00 in ET.
+        uint256 closeET = ETTimestamp.toETTimestamp(close, s, e);
+        assertEq(UnixTimestamp.getWeekday(closeET), 4, "not a Friday in ET");
+        assertEq(closeET % 1 days, 20 hours, "not 20:00 ET");
+
+        // No later Friday close exists in (close, _ts].
+        uint256 nextClose = oracle.exposed_getLastETFridayCloseTimestampInUTC(close + WEEK + 1 hours, s, e);
+        assertGt(nextClose, _ts, "a later close was skipped");
+    }
+
     // ================================================================== fuzz
 
     /// @dev Mon 00:30 .. Fri 19:59:59 ET: reverts iff older than tradingStaleness (or maxStaleness).
@@ -368,17 +553,17 @@ contract StalenessCheckerTest is Test {
 
     // ================================================================== fuzz: any week 2007..2099
 
-    /// @dev Model of the staleness rule for any timestamp, built on the ETTimestamp library (which is checked
-    ///      separately against Python zoneinfo in test/differential/). Covers every week, including the DST
-    ///      and New Year weekends, rather than one fixed EDT/EST week.
+    /// @dev Model of the staleness rule for any timestamp, built on the ETTimestamp library and the module's
+    ///      weekend helpers (both checked separately against Python zoneinfo in test/differential/). Covers
+    ///      every week, including the DST and New Year weekends, rather than one fixed EDT/EST week.
     function testFuzz_afterRead_AnyWeek(uint256 _now, uint256 _age) public {
         _now = bound(_now, 1168214400, 4102444799); // 2007-01-08 .. 2099-12-31
         _age = bound(_age, 0, MAX + 1 hours);
         uint256 updatedAt = _now - _age;
         (uint256 year,,) = UnixTimestamp.getDate(_now);
         (uint256 s, uint256 e) = ETTimestamp.getETTransitionBoundariesInUTC(year);
-        bool closedOrGrace = ETTimestamp.isETWeekendTrading(_now, s, e, REOPEN);
-        uint256 close = ETTimestamp.getLastETFridayCloseInUTC(_now, s, e);
+        bool closedOrGrace = oracle.exposed_isETWeekendTrading(_now, s, e, REOPEN);
+        uint256 close = oracle.exposed_getLastETFridayCloseTimestampInUTC(_now, s, e);
 
         vm.warp(_now);
         if (_age > MAX) {

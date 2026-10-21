@@ -1,4 +1,5 @@
-"""Differential tests: compiled ETTimestamp.sol (via ETTimestampWrapper in py-evm) vs zoneinfo("America/New_York").
+"""Differential tests: compiled ETTimestamp.sol (via ETTimestampWrapper in py-evm) and the StalenessChecker weekend
+helpers (via StalenessCheckerWrapper) vs zoneinfo("America/New_York").
 
 The library hard-codes the post-2007 US DST rule (second Sunday of March 02:00 -> first Sunday of
 November 02:00), so the comparison domain starts in 2007. DST boundaries passed to the per-timestamp
@@ -30,7 +31,7 @@ def sol_boundaries(et, year):
     return tuple(et.call("getETTransitionBoundariesInUTC(uint256)", [U], [year], [U, U]))
 
 
-def assert_et_functions(et, ts, grace):
+def assert_et_functions(et, staleness, ts, grace):
     year = ref.get_date(ts)[0]
     s, e = sol_boundaries(et, year)
     args3 = [ts, s, e]
@@ -39,15 +40,15 @@ def assert_et_functions(et, ts, grace):
     assert et.call("getETOffset(uint256,uint256,uint256)", [U] * 3, args3, [U]) == ref.et_offset(ts), ctx
     assert et.call("toETTimestamp(uint256,uint256,uint256)", [U] * 3, args3, [U]) == ref.to_et_timestamp(ts), ctx
     assert et.call("isETWeekend(uint256,uint256,uint256)", [U] * 3, args3, ["bool"]) == ref.is_et_weekend(ts), ctx
-    assert et.call("isETWeekendTrading(uint256,uint256,uint256)", [U] * 3, args3, ["bool"]) == (
-        ref.is_et_weekend_trading(ts, 0)
-    ), ctx
-    assert et.call(
-        "isETWeekendTradingWithGrace(uint256,uint256,uint256,uint256)", [U] * 4, [ts, s, e, grace], ["bool"]
+    assert staleness.call(
+        "exposed_isETWeekendTrading(uint256,uint256,uint256,uint256)", [U] * 4, [ts, s, e, 0], ["bool"]
+    ) == ref.is_et_weekend_trading(ts, 0), ctx
+    assert staleness.call(
+        "exposed_isETWeekendTrading(uint256,uint256,uint256,uint256)", [U] * 4, [ts, s, e, grace], ["bool"]
     ) == ref.is_et_weekend_trading(ts, grace), ctx
-    assert et.call("getLastETFridayCloseInUTC(uint256,uint256,uint256)", [U] * 3, args3, [U]) == (
-        ref.last_friday_close(ts)
-    ), ctx
+    assert staleness.call(
+        "exposed_getLastETFridayCloseTimestampInUTC(uint256,uint256,uint256)", [U] * 3, args3, [U]
+    ) == ref.last_friday_close(ts), ctx
     assert et.call("adjustedUTCForETOffset(uint256,uint256,uint256)", [U] * 3, args3, [U]) == (
         ref.adjusted_utc_for_et_offset(ts)
     ), ctx
@@ -110,31 +111,31 @@ EDGE_TIMESTAMPS = [
 
 @pytest.mark.parametrize("grace", GRACES)
 @pytest.mark.parametrize("ts", EDGE_TIMESTAMPS)
-def test_et_functions_edge_cases(et, ts, grace):
-    assert_et_functions(et, ts, grace)
+def test_et_functions_edge_cases(et, staleness, ts, grace):
+    assert_et_functions(et, staleness, ts, grace)
 
 
 @given(st.integers(FROM, TO), st.integers(0, 86_400))
-def test_et_functions_full_domain(et, ts, grace):
-    assert_et_functions(et, ts, grace)
+def test_et_functions_full_domain(et, staleness, ts, grace):
+    assert_et_functions(et, staleness, ts, grace)
 
 
 @given(st.integers(calendar.timegm((2015, 1, 1, 0, 0, 0)), calendar.timegm((2100, 1, 1, 0, 0, 0))), st.sampled_from(GRACES))
-def test_et_functions_realistic_range(et, ts, grace):
-    assert_et_functions(et, ts, grace)
+def test_et_functions_realistic_range(et, staleness, ts, grace):
+    assert_et_functions(et, staleness, ts, grace)
 
 
 @given(st.integers(2007, 9998), st.booleans(), st.integers(-36 * 3600, 36 * 3600), st.sampled_from(GRACES))
-def test_et_functions_around_dst_switch(et, year, at_end, delta, grace):
+def test_et_functions_around_dst_switch(et, staleness, year, at_end, delta, grace):
     s, e = ref.dst_boundaries(year)
-    assert_et_functions(et, (e if at_end else s) + delta, grace)
+    assert_et_functions(et, staleness, (e if at_end else s) + delta, grace)
 
 
 @given(st.integers(0, 400_000), st.booleans(), st.integers(-3 * 3600, 3 * 3600), st.sampled_from(GRACES))
-def test_et_functions_around_close_and_reopen(et, week, sunday, delta, grace):
+def test_et_functions_around_close_and_reopen(et, staleness, week, sunday, delta, grace):
     first_close = int(datetime(2007, 1, 12, 20, tzinfo=ref.NEW_YORK).timestamp())  # a Friday close
     pivot = first_close + week * 7 * 86_400 + (2 * 86_400 if sunday else 0)
-    assert_et_functions(et, pivot + delta, grace)
+    assert_et_functions(et, staleness, pivot + delta, grace)
 
 
 def _boundary_years():
@@ -142,15 +143,15 @@ def _boundary_years():
 
 
 @pytest.mark.parametrize("year", _boundary_years())
-def test_et_functions_exact_dst_switch_seconds(et, year):
+def test_et_functions_exact_dst_switch_seconds(et, staleness, year):
     """Exactly -1s / 0 / +1s around both DST switches (computed by zoneinfo, not by the library)."""
     for pivot in ref.dst_boundaries(year):
         for delta in (-1, 0, 1):
-            assert_et_functions(et, pivot + delta, 30 * 60)
+            assert_et_functions(et, staleness, pivot + delta, 30 * 60)
 
 
 @pytest.mark.parametrize("year", _boundary_years())
-def test_et_functions_exact_close_reopen_seconds(et, year):
+def test_et_functions_exact_close_reopen_seconds(et, staleness, year):
     """+-1s around the Friday 20:00 close and Sunday 20:00 reopen of the DST weekends and a mid-summer and a
     New Year weekend of `year`, plus the last/first second of each reopen grace period."""
     starts, ends = ref.dst_boundaries(year)
@@ -163,28 +164,28 @@ def test_et_functions_exact_close_reopen_seconds(et, year):
             datetime.fromtimestamp(close, tz=ref.NEW_YORK).date() + timedelta(days=2), time(20, 0), tzinfo=ref.NEW_YORK
         ).timestamp())
         for ts in (close - 1, close, close + 1, reopen - 1, reopen, reopen + 1):
-            assert_et_functions(et, ts, 0)
+            assert_et_functions(et, staleness, ts, 0)
         for grace in GRACES[1:]:
             for ts in (reopen + grace - 1, reopen + grace):
-                assert_et_functions(et, ts, grace)
+                assert_et_functions(et, staleness, ts, grace)
 
 
 def _hourly(start: tuple, end: tuple):
     return range(calendar.timegm((*start, 0, 0, 0)), calendar.timegm((*end, 0, 0, 0)), 3600)
 
 
-def test_every_hour_around_2024_dst_switches(et):
+def test_every_hour_around_2024_dst_switches(et, staleness):
     """Hourly sweep over the weeks around both 2024 DST switches (grace 30 min)."""
     for window in (_hourly((2024, 2, 25), (2024, 3, 25)), _hourly((2024, 10, 20), (2024, 11, 20))):
         for ts in window:
-            assert_et_functions(et, ts, 30 * 60)
+            assert_et_functions(et, staleness, ts, 30 * 60)
 
 
 @pytest.mark.skipif(not EXHAUSTIVE, reason="set DIFF_EXHAUSTIVE=1 (~5 min)")
-def test_every_hour_of_2024_to_2026(et):
+def test_every_hour_of_2024_to_2026(et, staleness):
     """Hourly sweep over three full years, including both DST switches of each year (grace 30 min)."""
     for ts in _hourly((2024, 1, 1), (2027, 1, 1)):
-        assert_et_functions(et, ts, 30 * 60)
+        assert_et_functions(et, staleness, ts, 30 * 60)
 
 
 def test_reference_sanity():

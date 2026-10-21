@@ -3,14 +3,19 @@ pragma solidity ^0.8.28;
 
 import {UnixTimestamp} from "src/libraries/UnixTimestamp.sol";
 import {ETTimestampWrapper} from "test/mocks/wrappers/ETTimestampWrapper.sol";
+import {StalenessCheckerWrapper} from "test/mocks/wrappers/StalenessCheckerWrapper.sol";
 import {DifferentialBase} from "./DifferentialBase.sol";
 
-/// @notice Differential fuzz tests: ETTimestamp.sol vs Python zoneinfo("America/New_York").
+/// @notice Differential fuzz tests: ETTimestamp.sol and the StalenessChecker weekend helpers vs Python
+///         zoneinfo("America/New_York").
 /// @dev The library hard-codes the post-2007 US DST rule, so the comparison domain starts in 2007.
 ///      DST boundaries are always taken from getETTransitionBoundariesInUTC(<UTC year of ts>), exactly
-///      as StalenessChecker does.
+///      as StalenessChecker does. The weekend helpers (`_isETWeekendTrading`, `_checkETWeekendTrading`,
+///      `_getLastETFridayCloseTimestampInUTC`) are internal to StalenessChecker and are called through
+///      StalenessCheckerWrapper. They are pure, so the constructor arguments do not matter.
 contract ETTimestampDifferentialTest is DifferentialBase {
     ETTimestampWrapper internal lib;
+    StalenessCheckerWrapper internal oracle;
 
     uint256 internal constant FROM = 1168214400; // 2007-01-08 00:00 UTC
     uint256 internal constant TO = 253401696000; // 9999-12-25 00:00 UTC (reference needs a week of headroom)
@@ -18,6 +23,7 @@ contract ETTimestampDifferentialTest is DifferentialBase {
     function setUp() public override {
         super.setUp();
         lib = new ETTimestampWrapper();
+        oracle = new StalenessCheckerWrapper(address(1), 1, 1, 0);
     }
 
     // ------------------------------------------------------------------ helpers
@@ -50,13 +56,21 @@ contract ETTimestampDifferentialTest is DifferentialBase {
         assertEq(lib.getETOffset(_ts, s, e), r.offset, string.concat("offset", at));
         assertEq(lib.toETTimestamp(_ts, s, e), r.etTimestamp, string.concat("toETTimestamp", at));
         assertEq(lib.isETWeekend(_ts, s, e), r.isETWeekend, string.concat("isETWeekend", at));
-        assertEq(lib.isETWeekendTrading(_ts, s, e), r.isETWeekendTrading, string.concat("isETWeekendTrading", at));
         assertEq(
-            lib.isETWeekendTradingWithGrace(_ts, s, e, _grace),
+            oracle.exposed_isETWeekendTrading(_ts, s, e, 0),
+            r.isETWeekendTrading,
+            string.concat("isETWeekendTrading", at)
+        );
+        assertEq(
+            oracle.exposed_isETWeekendTrading(_ts, s, e, _grace),
             r.isETWeekendTradingWithGrace,
             string.concat("isETWeekendTrading(grace)", at)
         );
-        assertEq(lib.getLastETFridayCloseInUTC(_ts, s, e), r.lastFridayClose, string.concat("lastFridayClose", at));
+        assertEq(
+            oracle.exposed_getLastETFridayCloseTimestampInUTC(_ts, s, e),
+            r.lastFridayClose,
+            string.concat("lastFridayClose", at)
+        );
         assertEq(lib.adjustedUTCForETOffset(_ts, s, e), r.adjustedUTC, string.concat("adjustedUTC", at));
     }
 

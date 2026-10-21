@@ -1,7 +1,7 @@
 # Differential tests: Solidity date/time libraries vs Python
 
-`src/libraries/UnixTimestamp.sol` and `src/libraries/ETTimestamp.sol` are compared against an
-independent reference written with Python's standard library (`datetime`, `calendar`,
+`src/libraries/UnixTimestamp.sol`, `src/libraries/ETTimestamp.sol` and the weekend helpers of
+`src/modules/StalenessChecker.sol` are compared against an independent reference written with Python's standard library (`datetime`, `calendar`,
 `zoneinfo("America/New_York")`) in [`reference.py`](./reference.py).
 
 There are two harnesses. Both use the same reference:
@@ -28,7 +28,7 @@ test/differential/
 ```
 
 Both harnesses call the wrapper contracts in `test/mocks/wrappers/` (`UnixTimestampWrapper`,
-`ETTimestampWrapper`), which expose the internal library functions as external calls.
+`ETTimestampWrapper`, `StalenessCheckerWrapper`), which expose the internal functions as external calls.
 
 ## What is compared
 
@@ -39,9 +39,11 @@ Both harnesses call the wrapper contracts in `test/mocks/wrappers/` (`UnixTimest
 - **`getTimestamp`:** every result, and the exact `InvalidYear`, `InvalidMonth` or `InvalidDay`
   revert.
 - **Leap years:** every year from 1970 to 9999 is checked through `getTimestamp` and `getDate`.
-- **ETTimestamp:** `getETTransitionBoundariesInUTC`, `getETOffset`, `toETTimestamp`, `isETWeekend`,
-  both `isETWeekendTrading` overloads, `getLastETFridayCloseInUTC` and `_adjustedUTCForETOffset`.
-  They are compared against zoneinfo from 2007 to 9999. The tests target the DST switches, the
+- **ETTimestamp:** `getETTransitionBoundariesInUTC`, `getETOffset`, `toETTimestamp`, `isETWeekend`
+  and `adjustedUTCForETOffset`.
+- **StalenessChecker weekend helpers:** `_isETWeekendTrading` (with a grace period of zero and with a
+  random grace period) and `_getLastETFridayCloseTimestampInUTC`.
+- ETTimestamp and the weekend helpers are compared against zoneinfo from 2007 to 9999. The tests target the DST switches, the
   Friday 20:00 close and the Sunday 20:00 reopen.
 
 ## Known and expected differences
@@ -79,8 +81,8 @@ DIFF_EXHAUSTIVE=1 .venv/bin/python -m pytest test/differential/python           
 
 `conftest.py` first runs `FOUNDRY_PROFILE=differential forge build`. This writes the build to
 `out-differential/`, compiled for `evm_version = cancun`, because py-evm does not support Osaka.
-It then deploys `UnixTimestampWrapper` and `ETTimestampWrapper` from `test/mocks/wrappers/` and calls
-them with raw ABI calldata.
+It then deploys `UnixTimestampWrapper`, `ETTimestampWrapper` and `StalenessCheckerWrapper` from
+`test/mocks/wrappers/` and calls them with raw ABI calldata.
 
 - Set `DIFF_SKIP_BUILD=1` to reuse an existing build.
 - Set `FORGE=/path/to/forge` if `forge` is not on your `PATH`.
