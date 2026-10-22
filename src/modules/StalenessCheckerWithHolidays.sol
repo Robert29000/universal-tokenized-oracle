@@ -25,7 +25,6 @@ import { IStalenessCheckerWithHolidays } from "./interfaces/IStalenessCheckerWit
 ///      Otherwise it reverts with `TradingStalenessReached`.
 ///      `reopenTimeWait` must be less than `MAX_REOPEN_TIME_WAIT`, so each grace period ends before 00:00 ET of the
 ///      next day. Early closes (half days) are not handled: the module always uses the 20:00 ET close.
-///      Trust assumption (see `MarketHoliday`): if a holiday is not set, reads revert during the holiday closure. If a date is set by mistake, the module accepts older prices on that date.
 abstract contract StalenessCheckerWithHolidays is StalenessChecker, MarketHoliday, IStalenessCheckerWithHolidays {
 
     /// @notice Exclusive upper bound of `reopenTimeWait`, in seconds. The grace period after a 20:00 ET reopen must

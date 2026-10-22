@@ -13,10 +13,6 @@ import { UnixTimestamp } from "../../libraries/UnixTimestamp.sol";
 ///         Modules that need the holidays inherit this contract, so all of them read the same dates.
 /// @dev Market model: the market trades 24 hours a day, 5 days a week. The session of a weekday D starts at
 ///      20:00 ET on the day before D and ends at 20:00 ET on D. A holiday on D closes the market for this session.
-///      This contract inherits `Ownable` and not `UniversalOracleBase`, so that it does not depend on the price read.
-///      It does not call the `Ownable` constructor: the derived contract calls it, in practice through
-///      `UniversalOracleBase`. If several modules inherit this contract, C3 linearization keeps one copy of
-///      `isHolidayET`, so the owner sets each holiday one time.
 ///      Trust assumption: the owner sets the holidays correctly and before they occur. The effect of a missing or
 ///      wrong date is described in each module that reads the holidays.
 abstract contract MarketHoliday is Ownable, IMarketHoliday {
