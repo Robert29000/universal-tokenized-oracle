@@ -4,28 +4,32 @@ Universal Tokenized Oracle is a price oracle for tokenized stocks. It reads the 
 
 The checks are in separate modules. Each module overrides one of two hooks in `UniversalOracleBase`:
 
-1. `_beforeRead()` runs before the oracle reads the feed. Checks that do not need the round data go here, for example the L2 sequencer status and the corporate pause.
-2. `_afterRead(round)` runs after the oracle reads the feed. Checks on the round data go here, for example price > 0 and staleness.
-
-
-The project supports the tokenized stocks of these providers:
-
-- Robinhood
-- Coinbase
-- xStocks (Backed Finance)
+1. `_beforeRead()` runs before the oracle reads the feed. Checks that do not need the round data go here.
+2. `_afterRead(round)` runs after the oracle reads the feed. Checks on the round data go here.
 
 ## Modules
 
-| Module | Hook | Description |
+| Module | Description |
+|---|---|
+| `UniversalOracleBase` | Base contract. Reads `latestRoundData()` from the feed and runs the hooks. Reverts if the price is 0 or less. The deployer becomes the owner. |
+| `L2SequencerChecker` | Reverts while the L2 sequencer is down. After the sequencer status changes, it also reverts until `downtimeWait` seconds pass. Reads the Chainlink L2 sequencer uptime feed. |
+| `StalenessChecker` | Reverts if the price is older than `maxStaleness`. While the market trades, it reverts if the price is older than `tradingStaleness`. During the weekend closure (Friday 20:00 ET to Sunday 20:00 ET), it accepts a price that was fresh at the Friday close. A grace period `reopenTimeWait` applies after the Sunday reopen. |
+| `StalenessCheckerWithHolidays` | Extends `StalenessChecker` with US market holidays. The owner sets each holiday date. On a holiday, the module accepts a price that was fresh at the last market close. |
+| `CorporatePauseChecker` | Reverts while the corporate provider reports a pause. Reads an `IPauseConfigurator`. The owner can replace the configurator. |
+
+### Providers and configurators
+
+The project supports the tokenized stocks of these providers. Each provider has a different way to report a corporate pause, so each provider has its own `IPauseConfigurator`. `CorporatePauseChecker` reads the configurator of the provider of the token.
+
+| Provider | Configurator | Description |
 |---|---|---|
-| `UniversalOracleBase` | both | Base contract. Reads `latestRoundData()` from the feed and runs the hooks. Reverts if the price is 0 or less. The deployer becomes the owner. |
-| `L2SequencerChecker` | `_beforeRead` | Reverts while the L2 sequencer is down. After the sequencer status changes, it also reverts until `downtimeWait` seconds pass. Reads the Chainlink L2 sequencer uptime feed. |
-| `StalenessChecker` | `_afterRead` | Reverts if the price is older than `maxStaleness`. While the market trades, it reverts if the price is older than `tradingStaleness`. During the weekend closure (Friday 20:00 ET to Sunday 20:00 ET), it accepts a price that was fresh at the Friday close. A grace period `reopenTimeWait` applies after the Sunday reopen. |
-| `StalenessCheckerWithHolidays` | `_afterRead` | Extends `StalenessChecker` with US market holidays. The owner sets each holiday date. On a holiday, the module accepts a price that was fresh at the last market close. |
-| `CorporatePauseChecker` | `_beforeRead` | Reverts while the corporate provider reports a pause. Reads an `IPauseConfigurator`. The owner can replace the configurator. |
-| `RobinhoodPauseConfigurator` | n/a | `IPauseConfigurator` for Robinhood. Returns the oracle pause flag of the Robinhood contract. |
-| `CoinbasePauseConfigurator` | n/a | `IPauseConfigurator` for Coinbase. Returns the per-token `paused` flag of the Coinbase oracle registry. |
-| `xStocksPauseConfigurator` | n/a | `IPauseConfigurator` for xStocks. Reports a pause during a time window before and after each multiplier update of the token (for example a stock split). The owner sets the window length. |
+| Robinhood | `RobinhoodPauseConfigurator` | Returns the oracle pause flag of the Robinhood token contract. |
+| Coinbase | `CoinbasePauseConfigurator` | Returns the per-token `paused` flag of the Coinbase oracle registry. |
+| xStocks (Backed Finance) | `xStocksPauseConfigurator` | Reports a pause during a time window before and after each multiplier update of the token. The owner sets the window length. |
+
+To support a different provider, write a contract that implements `IPauseConfigurator`.
+
+### Libraries
 
 The modules use these libraries:
 
@@ -46,8 +50,6 @@ For the security issues that the project accepts, see [`doc/KNOWN_ISSUES.md`](./
 
 ### Install the dependencies
 
-The dependencies are Git submodules in `lib/`: `forge-std`, `chainlink-evm` and `openzeppelin-contracts`.
-
 Clone the repository with its submodules:
 
 ```sh
@@ -65,8 +67,6 @@ git submodule update --init --recursive
 ```sh
 forge build
 ```
-
-The contracts are abstract modules. The repository has no deployment script. To use the oracle, write a contract that inherits the modules that you need, and expose `_price()`.
 
 ## Tests
 
