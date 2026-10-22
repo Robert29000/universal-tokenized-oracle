@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import { StalenessChecker } from "./StalenessChecker.sol";
+import { MarketHoliday } from "./shared/MarketHoliday.sol";
 
 import { ETTimestamp } from "../libraries/ETTimestamp.sol";
 import { UnixTimestamp } from "../libraries/UnixTimestamp.sol";
@@ -11,9 +12,10 @@ import { IStalenessCheckerWithHolidays } from "./interfaces/IStalenessCheckerWit
 /// @title StalenessCheckerWithHolidays
 /// @author Robert29000
 /// @notice Staleness module that also accepts older prices while the US market is closed for a holiday.
-///         It extends the weekend rules of `StalenessChecker`. The owner sets each holiday as an ET calendar date.
-/// @dev Market model: the market trades 24 hours a day, 5 days a week. The session of a weekday D starts at
-///      20:00 ET on the day before D and ends at 20:00 ET on D. A holiday on D closes the market for this session.
+///         It extends the weekend rules of `StalenessChecker`. The holidays come from `MarketHoliday`: the owner
+///         sets each holiday as an ET calendar date.
+/// @dev Inherits the holiday storage, `setHolidayET`, `_checkIsHolidayET` and `_isETHolidayTrading` from
+///      `MarketHoliday`, and uses the market model of `MarketHoliday`.
 ///      A grace period of `reopenTimeWait` seconds follows the reopen at 20:00 ET on D.
 ///      Overrides `_checkTradingStaleness`. A price older than `tradingStaleness` is accepted only if both are true:
 ///      - `block.timestamp` is in the weekend closure or its reopen grace period (`_isETWeekendTrading`), or in a
@@ -23,19 +25,12 @@ import { IStalenessCheckerWithHolidays } from "./interfaces/IStalenessCheckerWit
 ///      Otherwise it reverts with `TradingStalenessReached`.
 ///      `reopenTimeWait` must be less than `MAX_REOPEN_TIME_WAIT`, so each grace period ends before 00:00 ET of the
 ///      next day. Early closes (half days) are not handled: the module always uses the 20:00 ET close.
-///      Trust assumption: the owner sets the holidays correctly and before they occur. If a holiday is not set, reads
-///      revert during the holiday closure. If a date is set by mistake, the module accepts older prices on that date.
-abstract contract StalenessCheckerWithHolidays is StalenessChecker, IStalenessCheckerWithHolidays {
+///      Trust assumption (see `MarketHoliday`): if a holiday is not set, reads revert during the holiday closure. If a date is set by mistake, the module accepts older prices on that date.
+abstract contract StalenessCheckerWithHolidays is StalenessChecker, MarketHoliday, IStalenessCheckerWithHolidays {
 
     /// @notice Exclusive upper bound of `reopenTimeWait`, in seconds. The grace period after a 20:00 ET reopen must
     ///         end before 00:00 ET of the next day.
     uint public constant MAX_REOPEN_TIME_WAIT = 4 hours;
-
-    /// @notice Returns true if the owner set the ET calendar date of a key as a holiday.
-    /// @dev The key is `_getHolidayKey(year, month, day)`: `keccak256(abi.encode(year, month, day))`.
-    ///      This NatSpec is explicit (not inherited from the interface), because `forge doc` does not show
-    ///      inherited NatSpec for a mapping.
-    mapping (bytes32 => bool) public isHolidayET;
 
     /// @notice Sets the staleness limits. The limits cannot be changed after deployment.
     /// @dev Runs the `StalenessChecker` constructor checks first. Then reverts with
@@ -92,39 +87,6 @@ abstract contract StalenessCheckerWithHolidays is StalenessChecker, IStalenessCh
             uint256 lastETCloseTimestampInUTC = _getLastETCloseTimestampInUTC(year, month, day, dayType);
             require(_round.updatedAt + tradingStaleness >= lastETCloseTimestampInUTC, TradingStalenessReached());
         }
-    }
-
-    /// @notice Returns true if a timestamp is in a holiday closure, or less than `_reopenTimeWait` seconds after the
-    ///         20:00 ET reopen on a holiday.
-    /// @dev With `t` the ET time of day of `_timestamp`:
-    ///      - Before 20:00 ET: true if the ET date of `_timestamp` is a holiday.
-    ///      - At or after 20:00 ET: true if the next ET date is a holiday, or if the ET date is a holiday and
-    ///        `t < 20:00 + _reopenTimeWait`.
-    ///      This function does not check weekends. `_isETWeekendTrading` checks them.
-    ///      Reverts with `UnixTimestamp.InvalidYear` if the ET year of `_timestamp` is 9999 or greater
-    ///      (`UnixTimestamp.getNextDate`).
-    /// @param _timestamp Unix timestamp in seconds (UTC).
-    /// @param dstStartTimestamp DST start of the UTC year of `_timestamp`.
-    /// @param dstEndTimestamp DST end of the UTC year of `_timestamp`.
-    /// @param _reopenTimeWait Grace period after the 20:00 ET reopen on a holiday, in seconds. The grace period
-    ///        ends at 00:00 ET at the latest.
-    /// @return True if the market is closed for a holiday, or the holiday reopen grace period is not over, at `_timestamp`.
-    function _isETHolidayTrading(uint256 _timestamp, uint256 dstStartTimestamp, uint256 dstEndTimestamp, uint256 _reopenTimeWait) internal view returns (bool) {
-        uint etTimestamp = ETTimestamp.toETTimestamp(_timestamp, dstStartTimestamp, dstEndTimestamp);
-
-        (uint256 year, uint256 month, uint256 day) = UnixTimestamp.getDate(etTimestamp);
-        (uint256 nextYear, uint256 nextMonth, uint256 nextDay) = UnixTimestamp.getNextDate(year, month, day);
-
-        bool isCurrentDateHoliday = _checkIsHolidayET(year, month, day);
-        bool isNextDateHoliday = _checkIsHolidayET(nextYear, nextMonth, nextDay);
-
-        uint256 secondsOfDay = etTimestamp % 1 days;
-
-        if (secondsOfDay < 20 hours) {
-            return isCurrentDateHoliday;                                   // inside today's session
-        }
-        return isNextDateHoliday                                           // tomorrow's session is closed
-            || (isCurrentDateHoliday && secondsOfDay < 20 hours + _reopenTimeWait); // grace after today's reopen
     }
 
     /// @notice Returns the UTC timestamp of the last 20:00 ET market close before the closure that contains an ET date.
@@ -195,44 +157,5 @@ abstract contract StalenessCheckerWithHolidays is StalenessChecker, IStalenessCh
 
             return ETTimestamp.toUTCTimestamp(etTimestamp + 20 hours, _year);
         }
-    }
-
-    /// @notice Returns true if the owner set an ET calendar date as a holiday.
-    /// @param _year The calendar year of the ET date.
-    /// @param _month The month of the ET date, from 1 to 12.
-    /// @param _day The day of the month of the ET date.
-    /// @return True if the date is a holiday.
-    function _checkIsHolidayET(uint256 _year, uint256 _month, uint256 _day) internal view returns (bool) {
-        bytes32 holidayKey = _getHolidayKey(_year, _month, _day);
-        return isHolidayET[holidayKey];
-    }
-
-    /// @inheritdoc IStalenessCheckerWithHolidays
-    /// @dev Only the owner can call this function. Reverts with `UnixTimestamp.InvalidYear`, `UnixTimestamp.InvalidMonth`
-    ///      or `UnixTimestamp.InvalidDay` if the date is not valid, and with `WeekendDayCannotBeSetAsHoliday` if the
-    ///      date is a Saturday or a Sunday. It does not check that the date is in the future, and it accepts the
-    ///      current value again. Emits `HolidaySet`.
-    function setHolidayET(uint256 _year, uint256 _month, uint256 _day, bool _isHolidayET) external onlyOwner {
-
-        uint256 etTimestamp = UnixTimestamp.getTimestamp(_year, _month, _day);
-
-        if (UnixTimestamp.isWeekendDay(etTimestamp)) {
-            revert WeekendDayCannotBeSetAsHoliday();
-        }
-
-        bytes32 holidayKey = _getHolidayKey(_year, _month, _day);
-        isHolidayET[holidayKey] = _isHolidayET;
-
-        emit HolidaySet(_year, _month, _day, _isHolidayET);
-    }
-
-    /// @notice Returns the key of an ET calendar date in `isHolidayET`.
-    /// @dev The key is `keccak256(abi.encode(_year, _month, _day))`. This function does not validate the date.
-    /// @param _year The calendar year of the ET date.
-    /// @param _month The month of the ET date, from 1 to 12.
-    /// @param _day The day of the month of the ET date.
-    /// @return The key of the date.
-    function _getHolidayKey(uint256 _year, uint256 _month, uint256 _day) internal pure returns (bytes32) {
-        return keccak256(abi.encode(_year, _month, _day));
     }
 }
