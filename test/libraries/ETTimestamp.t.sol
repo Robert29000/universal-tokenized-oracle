@@ -180,4 +180,53 @@ contract ETTimestampTest is Test {
         assertEq(lib.adjustedUTCForETOffset(e - 1, s, e), e - 1, "EDT unchanged (end - 1)");
         assertEq(lib.adjustedUTCForETOffset(e, s, e), e + 1 hours, "EST adds 1h (end)");
     }
+
+    // ================================================================== toUTCTimestamp
+
+    function test_toUTCTimestamp_FridayClose() public view {
+        assertEq(lib.toUTCTimestamp(T.EDT_FRI_2000 - EDT, 2024), T.EDT_FRI_2000, "EDT");
+        assertEq(lib.toUTCTimestamp(T.EST_FRI_2000 - EST, 2024), T.EST_FRI_2000, "EST");
+    }
+
+    function test_toUTCTimestamp_NewYearAcceptsETOrUTCYear() public view {
+        // Fri 2021-12-31 20:00 EST == 2022-01-01 01:00 UTC
+        uint256 close = 1640998800;
+        assertEq(lib.toUTCTimestamp(close - EST, 2021), close, "ET year");
+        assertEq(lib.toUTCTimestamp(close - EST, 2022), close, "UTC year");
+    }
+
+    function test_toUTCTimestamp_AroundDSTStart() public view {
+        uint256 day = T.DST_START_2024 - 7 hours; // 2024-03-10 00:00 as an ET timestamp
+        assertEq(lib.toUTCTimestamp(day + 2 hours - 1, 2024), T.DST_START_2024 - 1, "01:59:59 EST");
+        assertEq(lib.toUTCTimestamp(day + 3 hours, 2024), T.DST_START_2024, "03:00 EDT");
+        // 02:30 does not exist: the result is the same instant as 03:30 EDT.
+        assertEq(lib.toUTCTimestamp(day + 2 hours + 30 minutes, 2024), T.DST_START_2024 + 30 minutes, "02:30");
+    }
+
+    function test_toUTCTimestamp_AroundDSTEnd() public view {
+        uint256 day = T.DST_END_2024 - 6 hours; // 2024-11-03 00:00 as an ET timestamp
+        assertEq(lib.toUTCTimestamp(day + 1 hours - 1, 2024), T.DST_END_2024 - 1 hours - 1, "00:59:59 EDT");
+        // 01:30 occurs twice: the first occurrence (EDT) is returned.
+        assertEq(lib.toUTCTimestamp(day + 1 hours + 30 minutes, 2024), T.DST_END_2024 - 30 minutes, "01:30");
+        assertEq(lib.toUTCTimestamp(day + 2 hours, 2024), T.DST_END_2024 + 1 hours, "02:00 EST");
+    }
+
+    function test_RevertWhen_toUTCTimestamp_InvalidYear() public {
+        vm.expectRevert(abi.encodeWithSelector(UnixTimestamp.InvalidYear.selector));
+        lib.toUTCTimestamp(T.EDT_FRI_2000, 1969);
+        vm.expectRevert(abi.encodeWithSelector(UnixTimestamp.InvalidYear.selector));
+        lib.toUTCTimestamp(T.EDT_FRI_2000, 10000);
+    }
+
+    /// @dev toUTCTimestamp(toETTimestamp(ts)) == ts, except in the second (EST) occurrence of the repeated
+    ///      November hour, where the first (EDT) occurrence is returned.
+    function testFuzz_toUTCTimestamp_RoundTrip(uint256 _ts) public view {
+        _ts = bound(_ts, 1168214400, 4102444799); // 2007-01-08 .. 2099-12-31
+        (uint256 year,,) = UnixTimestamp.getDate(_ts);
+        (uint256 s, uint256 e) = lib.getETTransitionBoundariesInUTC(year);
+        uint256 et = lib.toETTimestamp(_ts, s, e);
+        (uint256 etYear,,) = UnixTimestamp.getDate(et);
+        uint256 expected = (_ts >= e && _ts < e + 1 hours) ? _ts - 1 hours : _ts;
+        assertEq(lib.toUTCTimestamp(et, etYear), expected);
+    }
 }

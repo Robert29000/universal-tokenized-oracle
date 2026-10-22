@@ -171,3 +171,93 @@ def is_et_weekend_trading(ts: int, grace: int = 0) -> bool:
 def adjusted_utc_for_et_offset(ts: int) -> int:
     """ts + 1h when New York is on standard time, else ts (Friday 20:00 ET close expressed in UTC)."""
     return ts + 3600 if et_offset(ts) == 5 * 3600 else ts
+
+
+def et_to_utc(et_ts: int) -> tuple[bool, int]:
+    """(valid, UTC timestamp) of the New York wall-clock time encoded in `et_ts` (see to_et_timestamp).
+
+    `valid` is False in the two DST transition hours: the March hour that does not exist and the November
+    hour that occurs twice. zoneinfo gives two different offsets for fold=0 and fold=1 only in these hours.
+    The oracle never converts these hours (market closes and reopens are at 20:00 ET), so the differential
+    tests skip them.
+    """
+    wall = datetime(1970, 1, 1) + timedelta(seconds=et_ts)
+    first, second = wall.replace(tzinfo=NEW_YORK, fold=0), wall.replace(tzinfo=NEW_YORK, fold=1)
+    if first.utcoffset() != second.utcoffset():
+        return False, 0
+    return True, int(first.timestamp())
+
+
+# --------------------------------------------------------------------------- StalenessCheckerWithHolidays
+
+# Market model: 24/5 trading. The session of weekday D runs from 20:00 ET on the day before D to 20:00 ET on D.
+MARKET_CLOSE = time(20, 0)
+
+# Outcome codes of StalenessCheckerWithHolidays._afterRead
+OUTCOME_OK = 0
+OUTCOME_MAX_STALENESS = 1
+OUTCOME_TRADING_STALENESS = 2
+
+DAY_REGULAR, DAY_HOLIDAY, DAY_WEEKEND = 0, 1, 2  # IStalenessCheckerWithHolidays.DayType
+
+
+def holidays_from_mask(first_day_ts: int, mask: int, days: int = 28) -> frozenset[date]:
+    """Weekdays `first_day + i` for every set bit i of `mask` (weekend bits are ignored, like setHolidayET)."""
+    first = datetime.fromtimestamp(first_day_ts, tz=timezone.utc).date()
+    out = {first + timedelta(days=i) for i in range(days) if mask >> i & 1}
+    return frozenset(d for d in out if d.weekday() < SATURDAY)
+
+
+def _is_trading_day(d: date, holidays: frozenset[date]) -> bool:
+    return d.weekday() < SATURDAY and d not in holidays
+
+
+def _session_date(local: datetime) -> date:
+    """The weekday session that contains `local` (it can be a weekend day or a holiday)."""
+    return local.date() + timedelta(days=1) if local.time() >= MARKET_CLOSE else local.date()
+
+
+def day_type(ts: int, holidays: frozenset[date]) -> tuple[int, int, int, int]:
+    """(year, month, day, DayType) of the New York calendar date of ts."""
+    d = datetime.fromtimestamp(ts, tz=NEW_YORK).date()
+    kind = DAY_WEEKEND if d.weekday() >= SATURDAY else DAY_HOLIDAY if d in holidays else DAY_REGULAR
+    return d.year, d.month, d.day, kind
+
+
+def is_et_holiday_trading(ts: int, holidays: frozenset[date], grace: int) -> bool:
+    """True while the session of ts is a holiday, or less than `grace` seconds after 20:00 ET on a holiday."""
+    local = datetime.fromtimestamp(ts, tz=NEW_YORK)
+    if _session_date(local) in holidays:
+        return True
+    if local.date() in holidays and local.time() >= MARKET_CLOSE:
+        reopen = int(datetime.combine(local.date(), MARKET_CLOSE, tzinfo=NEW_YORK).timestamp())
+        return ts - reopen < grace
+    return False
+
+
+def is_market_closed(ts: int, holidays: frozenset[date], grace: int) -> bool:
+    """Weekend closure, holiday closure, or a reopen grace period after either."""
+    return is_et_weekend_trading(ts, grace) or is_et_holiday_trading(ts, holidays, grace)
+
+
+def last_market_close(ts: int, holidays: frozenset[date]) -> int:
+    """UTC timestamp of 20:00 ET on the last trading day before the session of ts (always <= ts)."""
+    d = _session_date(datetime.fromtimestamp(ts, tz=NEW_YORK)) - timedelta(days=1)
+    while not _is_trading_day(d, holidays):
+        d -= timedelta(days=1)
+    return int(datetime.combine(d, MARKET_CLOSE, tzinfo=NEW_YORK).timestamp())
+
+
+def holiday_staleness_outcome(
+    ts: int, updated_at: int, holidays: frozenset[date], max_staleness: int, trading_staleness: int, grace: int
+) -> int:
+    """Expected result of StalenessCheckerWithHolidays._afterRead at block.timestamp == ts (answer > 0)."""
+    if updated_at + max_staleness < ts:
+        return OUTCOME_MAX_STALENESS
+    if updated_at + trading_staleness >= ts:
+        return OUTCOME_OK
+    if not is_market_closed(ts, holidays, grace):
+        return OUTCOME_TRADING_STALENESS
+    if updated_at + trading_staleness < last_market_close(ts, holidays):
+        return OUTCOME_TRADING_STALENESS
+    return OUTCOME_OK

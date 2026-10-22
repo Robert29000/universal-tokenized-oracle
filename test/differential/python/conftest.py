@@ -8,7 +8,8 @@ Environment variables:
   DIFF_SKIP_BUILD=1          do not run `forge build` (use existing out-differential/ artifacts)
   FORGE=/path/to/forge       forge binary (default: `forge` on PATH, then ~/.foundry/bin/forge)
   HYPOTHESIS_PROFILE=...     `default` (fast), `thorough` (many more examples)
-  DIFF_EXHAUSTIVE=1          also run the exhaustive sweeps (every year 2007..9999, every day 1970..2400)
+  DIFF_EXHAUSTIVE=1          also run the exhaustive sweeps (every year 2007..9999, every day 1970..2400,
+                             every hour of 2024..2026 with and without holidays)
 """
 
 from __future__ import annotations
@@ -75,6 +76,13 @@ class EvmContract:
         out = decode(ret_types, bytes(computation.output))
         return out[0] if len(out) == 1 else out
 
+    def transact(self, signature: str, arg_types: list[str], args: list) -> None:
+        """State-changing call from the deployer (boa.env.eoa), for example an `onlyOwner` setter."""
+        data = selector(signature) + encode(arg_types, args)
+        computation = boa.env.execute_code(to_address=self.address, data=data)
+        if computation.is_error:
+            raise SolidityRevert(bytes(computation.output))
+
 
 def _forge() -> str:
     exe = os.environ.get("FORGE") or shutil.which("forge") or str(Path.home() / ".foundry/bin/forge")
@@ -110,6 +118,21 @@ def unix(_build) -> EvmContract:
 @pytest.fixture(scope="session")
 def et(_build) -> EvmContract:
     return _deploy("ETTimestampWrapper")
+
+
+def deploy_staleness_with_holidays(
+    holidays, max_staleness: int, trading_staleness: int, reopen_time_wait: int
+) -> EvmContract:
+    """A new StalenessCheckerWithHolidaysWrapper (aggregator 0x...01) with each date of `holidays` set by the owner.
+    The `_build` fixture must have run (request it, or any contract fixture, in the test)."""
+    c = _deploy(
+        "StalenessCheckerWithHolidaysWrapper",
+        ["address", U256, U256, U256],
+        ["0x" + "00" * 19 + "01", max_staleness, trading_staleness, reopen_time_wait],
+    )
+    for d in sorted(holidays):
+        c.transact("setHolidayET(uint256,uint256,uint256,bool)", [U256, U256, U256, "bool"], [d.year, d.month, d.day, True])
+    return c
 
 
 @pytest.fixture(scope="session")

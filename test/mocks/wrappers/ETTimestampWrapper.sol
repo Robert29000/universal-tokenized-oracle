@@ -29,4 +29,8 @@ contract ETTimestampWrapper {
     {
         return ETTimestamp.adjustedUTCForETOffset(_timestamp, _dstStart, _dstEnd);
     }
+
+    function toUTCTimestamp(uint256 _etTimestamp, uint256 _year) external pure returns (uint256) {
+        return ETTimestamp.toUTCTimestamp(_etTimestamp, _year);
+    }
 }

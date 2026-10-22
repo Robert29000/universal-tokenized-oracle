@@ -197,3 +197,63 @@ def test_reference_sanity():
     assert ref.last_friday_close(1_717_804_800) == 1_717_804_800
     assert ref.is_et_weekend_trading(1_717_804_800) is True
     assert ref.is_et_weekend_trading(1_717_977_600) is False
+
+
+# --------------------------------------------------------------------------- ET -> UTC (toUTCTimestamp)
+
+
+def assert_to_utc(et, et_ts: int) -> bool:
+    """Compares toUTCTimestamp with both allowed year arguments: the ET year of `et_ts` and the UTC year of the
+    result. Returns False, and checks nothing, in the two DST transition hours (the March hour that does not
+    exist and the November hour that occurs twice). The oracle converts only 20:00 ET, never these hours."""
+    valid, utc = ref.et_to_utc(et_ts)
+    if not valid:
+        return False
+    for year in (ref.get_date(et_ts)[0], ref.get_date(utc)[0]):
+        assert et.call("toUTCTimestamp(uint256,uint256)", [U, U], [et_ts, year], [U]) == utc, (et_ts, year)
+    return True
+
+
+@given(st.integers(FROM, TO))
+def test_to_utc_full_domain(et, et_ts):
+    assert_to_utc(et, et_ts)
+
+
+@given(st.integers(2007, 9998), st.booleans(), st.integers(-36 * 3600, 36 * 3600))
+def test_to_utc_around_dst_switch(et, year, at_end, delta):
+    """Within +-36h (ET wall clock) of a DST switch. The switches happen at 02:00 ET wall clock."""
+    s, e = ref.dst_boundaries(year)
+    assert_to_utc(et, (e - 4 * 3600 if at_end else s - 5 * 3600) + delta)
+
+
+@given(st.integers(FROM // 86_400, TO // 86_400))
+def test_to_utc_market_close_never_skipped(et, day):
+    assert assert_to_utc(et, day * 86_400 + 20 * 3600), "20:00 ET was skipped"
+
+
+@pytest.mark.parametrize("year", _boundary_years())
+def test_to_utc_exact_transition_seconds(et, year):
+    """-1s / 0 / +1s around both transition hours. Only the seconds inside the hours are skipped."""
+    s, e = ref.dst_boundaries(year)
+    march, november = s - 7 * 3600, e - 6 * 3600  # 00:00 ET wall clock of the switch days
+    for et_ts, valid in [
+        (march + 2 * 3600 - 1, True), (march + 2 * 3600, False), (march + 3 * 3600 - 1, False), (march + 3 * 3600, True),
+        (november + 3600 - 1, True), (november + 3600, False), (november + 2 * 3600 - 1, False), (november + 2 * 3600, True),
+        (march + 20 * 3600, True), (november + 20 * 3600, True),
+    ]:
+        assert assert_to_utc(et, et_ts) is valid, (year, et_ts)
+
+
+@pytest.mark.skipif(not EXHAUSTIVE, reason="set DIFF_EXHAUSTIVE=1")
+def test_to_utc_every_hour_of_2024_to_2026(et):
+    for utc in _hourly((2024, 1, 1), (2027, 1, 1)):
+        assert_to_utc(et, ref.to_et_timestamp(utc))
+
+
+def test_reference_et_to_utc_skips_two_hours_per_year():
+    """The reference skips exactly the March hour and the November hour (guards against a broken oracle)."""
+    for year in (2007, 2024, 2100):
+        start = calendar.timegm((year, 1, 1, 0, 0, 0))
+        skipped = [h for h in range(start, calendar.timegm((year + 1, 1, 1, 0, 0, 0)), 3600) if not ref.et_to_utc(h)[0]]
+        s, e = ref.dst_boundaries(year)
+        assert skipped == [s - 5 * 3600, e - 5 * 3600], year  # 02:00 ET in March, 01:00 ET in November

@@ -39,6 +39,17 @@ abstract contract DifferentialBase is Test {
         return vm.ffi(args);
     }
 
+    function _ffi(string memory _cmd, uint256[] memory _args) internal returns (bytes memory) {
+        string[] memory args = new string[](3 + _args.length);
+        args[0] = python;
+        args[1] = SCRIPT;
+        args[2] = _cmd;
+        for (uint256 i = 0; i < _args.length; i++) {
+            args[3 + i] = vm.toString(_args[i]);
+        }
+        return vm.ffi(args);
+    }
+
     function _ffi(string memory _cmd, uint256 _a, uint256 _b, uint256 _c) internal returns (bytes memory) {
         string[] memory args = new string[](6);
         args[0] = python;

@@ -74,6 +74,21 @@ contract ETTimestampDifferentialTest is DifferentialBase {
         assertEq(lib.adjustedUTCForETOffset(_ts, s, e), r.adjustedUTC, string.concat("adjustedUTC", at));
     }
 
+    /// @dev Compares `toUTCTimestamp` with both allowed year arguments: the ET year of `_etTs` and the UTC year
+    ///      of the result. Returns false, and checks nothing, in the two DST transition hours (the March hour that
+    ///      does not exist and the November hour that occurs twice). The oracle converts only 20:00 ET, which is
+    ///      never in these hours.
+    function _checkToUTC(uint256 _etTs) internal returns (bool) {
+        (bool valid, uint256 utc) = abi.decode(_ffi("et2utc", _etTs), (bool, uint256));
+        if (!valid) return false;
+        (uint256 etYear,,) = UnixTimestamp.getDate(_etTs);
+        (uint256 utcYear,,) = UnixTimestamp.getDate(utc);
+        string memory at = string.concat(" @ ET ", vm.toString(_etTs));
+        assertEq(lib.toUTCTimestamp(_etTs, etYear), utc, string.concat("toUTCTimestamp(ET year)", at));
+        assertEq(lib.toUTCTimestamp(_etTs, utcYear), utc, string.concat("toUTCTimestamp(UTC year)", at));
+        return true;
+    }
+
     // ------------------------------------------------------------------ DST boundaries
 
     function testFuzz_diff_getETTransitionBoundariesInUTC(uint256 _year) public {
@@ -151,5 +166,44 @@ contract ETTimestampDifferentialTest is DifferentialBase {
                 _checkET(cases[i], graces[j]);
             }
         }
+    }
+
+    // ------------------------------------------------------------------ ET -> UTC (toUTCTimestamp)
+
+    function testFuzz_diff_toUTCTimestamp(uint256 _etTs) public {
+        _checkToUTC(bound(_etTs, FROM, TO));
+    }
+
+    /// @dev Within +-36h (ET wall clock) of a DST switch in a random year. The transition hour itself is skipped.
+    function testFuzz_diff_toUTCTimestamp_AroundDSTSwitch(uint256 _year, int256 _delta, bool _end) public {
+        _year = bound(_year, 2007, 9998);
+        (uint256 s, uint256 e) = lib.getETTransitionBoundariesInUTC(_year);
+        // The switches happen at 02:00 ET wall clock: 07:00 UTC - 5h in March, 06:00 UTC - 4h in November.
+        uint256 pivot = _end ? e - 4 hours : s - 5 hours;
+        _checkToUTC(uint256(int256(pivot) + bound(_delta, -36 hours, 36 hours)));
+    }
+
+    /// @dev 20:00 ET (the market close and reopen) of any day is never in a transition hour.
+    function testFuzz_diff_toUTCTimestamp_MarketClose(uint256 _day) public {
+        uint256 etTs = bound(_day, FROM / 1 days, TO / 1 days) * 1 days + 20 hours;
+        assertTrue(_checkToUTC(etTs), "20:00 ET was skipped");
+    }
+
+    function test_diff_toUTCTimestamp_EdgeCases() public {
+        uint256 march = 1710028800; // 2024-03-10 00:00 as an ET timestamp (DST start day)
+        uint256 november = 1730592000; // 2024-11-03 00:00 as an ET timestamp (DST end day)
+        assertTrue(_checkToUTC(march + 2 hours - 1), "Mar 01:59:59");
+        assertFalse(_checkToUTC(march + 2 hours), "Mar 02:00 does not exist");
+        assertFalse(_checkToUTC(march + 3 hours - 1), "Mar 02:59:59 does not exist");
+        assertTrue(_checkToUTC(march + 3 hours), "Mar 03:00");
+        assertTrue(_checkToUTC(november + 1 hours - 1), "Nov 00:59:59");
+        assertFalse(_checkToUTC(november + 1 hours), "Nov 01:00 occurs twice");
+        assertFalse(_checkToUTC(november + 2 hours - 1), "Nov 01:59:59 occurs twice");
+        assertTrue(_checkToUTC(november + 2 hours), "Nov 02:00");
+        assertTrue(_checkToUTC(march + 20 hours), "Mar 20:00");
+        assertTrue(_checkToUTC(november + 20 hours), "Nov 20:00");
+        assertTrue(_checkToUTC(1640998800 - 5 hours), "Fri 2021-12-31 20:00 EST (UTC year 2022)");
+        assertTrue(_checkToUTC(FROM), "FROM");
+        assertTrue(_checkToUTC(TO), "TO");
     }
 }

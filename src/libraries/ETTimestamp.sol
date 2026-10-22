@@ -132,13 +132,13 @@ library ETTimestamp {
 
     /// @notice Converts an ET timestamp to a UTC timestamp.
     /// @dev Inverse of `toETTimestamp`. Adds `EDT_OFFSET`, then adds 1 more hour if EST is in force at
-    ///      that instant. The EDT guess is at most 1 hour from the the correct side
+    ///      that instant. The EDT guess is at most 1 hour from the correct UTC instant, so it is on the correct side
     ///      of a DST boundary for every ET time except the two transition hours:
-    ///      - Second Sunday of March, 02:00–02:59 ET does not exis–03:59 EDT.
+    ///      - Second Sunday of March, 02:00–02:59 ET does not exist. The result is the same instant as 03:00–03:59 EDT.
     ///      - First Sunday of November, 01:00–01:59 ET occurs twice. The first occurrence (EDT) is returned.
-    ///      Market closes and reopens (20:00 ET) are never in thes
+    ///      Market closes and reopens (20:00 ET) are never in these hours.
     /// @param _etTimestamp ET timestamp in seconds (a UTC timestamp minus the ET offset, see `toETTimestamp`).
-    /// @param dstStartTimestamp DST start of the ET year of `_etTir of the result.
+    /// @param dstStartTimestamp DST start of the ET year of `_etTimestamp` or of the UTC year of the result.
     /// @param dstEndTimestamp DST end of the ET year of `_etTimestamp` or of the UTC year of the result.
     /// @return The Unix timestamp (UTC), in seconds.
     function _toUTCTimestamp(uint256 _etTimestamp, uint256 dstStartTimestamp, uint256 dstEndTimestamp) internal pure returns (uint256) {
