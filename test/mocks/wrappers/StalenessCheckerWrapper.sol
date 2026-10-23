@@ -20,10 +20,6 @@ contract StalenessCheckerWrapper is StalenessChecker {
         _afterRead(_round);
     }
 
-    function exposed_getDSTBoundaries(uint256 _timestamp) external pure returns (uint256, uint256) {
-        return _getDSTBoundaries(_timestamp);
-    }
-
     function exposed_isETWeekendTrading(uint256 _timestamp, uint256 _dstStart, uint256 _dstEnd, uint256 _grace)
         external
         pure

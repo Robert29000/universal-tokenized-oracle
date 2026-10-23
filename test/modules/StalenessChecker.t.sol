@@ -253,22 +253,6 @@ contract StalenessCheckerTest is Test {
         oracle.exposed_price();
     }
 
-    // ================================================================== _getDSTBoundaries
-
-    function test_getDSTBoundaries_UsesUTCYear() public view {
-        (uint256 s, uint256 e) = oracle.exposed_getDSTBoundaries(EDT_WED_NOON);
-        assertEq(s, T.DST_START_2024);
-        assertEq(e, T.DST_END_2024);
-        (s, e) = oracle.exposed_getDSTBoundaries(T.JAN_01_2024 - 1); // 2023-12-31 23:59:59 UTC
-        assertEq(s, 1678604400); // 2023-03-12 07:00 UTC
-        assertEq(e, 1699164000); // 2023-11-05 06:00 UTC
-    }
-
-    function test_RevertWhen_getDSTBoundaries_YearBeyond9999() public {
-        vm.expectRevert(abi.encodeWithSelector(UnixTimestamp.InvalidYear.selector));
-        oracle.exposed_getDSTBoundaries(T.MAX_DATETIME + 1);
-    }
-
     // ================================================================== _isETWeekendTrading (no grace)
 
     function test_isETWeekendTrading_EDTWeek() public view {

@@ -171,6 +171,41 @@ contract ETTimestampTest is Test {
         assertFalse(lib.isETWeekend(T.EST_NEXT_MON_0000, s, e), "next Mon 00:00");
     }
 
+    // ================================================================== isETWeekendByDate
+
+    function test_isETWeekendByDate_Week() public view {
+        // 2024-06-03 is a Monday.
+        assertFalse(lib.isETWeekendByDate(2024, 6, 3), "Mon");
+        assertFalse(lib.isETWeekendByDate(2024, 6, 7), "Fri");
+        assertTrue(lib.isETWeekendByDate(2024, 6, 8), "Sat");
+        assertTrue(lib.isETWeekendByDate(2024, 6, 9), "Sun");
+        assertFalse(lib.isETWeekendByDate(2024, 6, 10), "next Mon");
+    }
+
+    function test_isETWeekendByDate_ExtremeDates() public view {
+        assertFalse(lib.isETWeekendByDate(1970, 1, 1), "Thu 1970-01-01");
+        assertTrue(lib.isETWeekendByDate(1970, 1, 3), "Sat 1970-01-03");
+        assertFalse(lib.isETWeekendByDate(9999, 12, 31), "Fri 9999-12-31");
+    }
+
+    function test_RevertWhen_isETWeekendByDate_InvalidDate() public {
+        vm.expectRevert(abi.encodeWithSelector(UnixTimestamp.InvalidYear.selector));
+        lib.isETWeekendByDate(1969, 12, 31);
+        vm.expectRevert(abi.encodeWithSelector(UnixTimestamp.InvalidMonth.selector));
+        lib.isETWeekendByDate(2024, 13, 1);
+        vm.expectRevert(abi.encodeWithSelector(UnixTimestamp.InvalidDay.selector));
+        lib.isETWeekendByDate(2023, 2, 29);
+    }
+
+    /// @dev The ET date of a timestamp is a weekend date exactly when `isETWeekend` is true for the timestamp.
+    function testFuzz_isETWeekendByDate_MatchesIsETWeekend(uint256 _ts) public view {
+        _ts = bound(_ts, 1168214400, 4102444799); // 2007-01-08 .. 2099-12-31
+        (uint256 year,,) = UnixTimestamp.getDate(_ts);
+        (uint256 s, uint256 e) = lib.getETTransitionBoundariesInUTC(year);
+        (uint256 y, uint256 m, uint256 d) = UnixTimestamp.getDate(lib.toETTimestamp(_ts, s, e));
+        assertEq(lib.isETWeekendByDate(y, m, d), lib.isETWeekend(_ts, s, e));
+    }
+
     // ================================================================== adjustedUTCForETOffset
 
     function test_adjustedUTCForETOffset() public view {

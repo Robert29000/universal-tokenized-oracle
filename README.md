@@ -1,5 +1,9 @@
 # Universal Tokenized Oracle
 
+> [!WARNING]
+> **These contracts are not audited.** The code has unit, fuzz and differential tests, but no independent security
+> audit. Do not use it to secure real funds. Use it at your own risk.
+
 Universal Tokenized Oracle is a price oracle for tokenized stocks. It reads the price from a Chainlink-compatible feed. Before it returns the price, it runs a set of checks. If one check fails, the read reverts.
 
 The checks are in separate modules. Each module overrides one of two hooks in `UniversalOracleBase`:
@@ -15,6 +19,7 @@ The checks are in separate modules. Each module overrides one of two hooks in `U
 | `L2SequencerChecker` | Reverts while the L2 sequencer is down. After the sequencer status changes, it also reverts until `downtimeWait` seconds pass. Reads the Chainlink L2 sequencer uptime feed. |
 | `StalenessChecker` | Reverts if the price is older than `maxStaleness`. While the market trades, it reverts if the price is older than `tradingStaleness`. During the weekend closure (Friday 20:00 ET to Sunday 20:00 ET), it accepts a price that was fresh at the Friday close. A grace period `reopenTimeWait` applies after the Sunday reopen. |
 | `StalenessCheckerWithHolidays` | Extends `StalenessChecker` with US market holidays. The owner sets each holiday date. On a holiday, the module accepts a price that was fresh at the last market close. |
+| `TransitionCheckerWithHolidays` | Reverts for a short window after each US market session transition: 04:00 ET (overnight to pre-market), 09:30 ET (pre-market to regular), 16:00 ET (regular to post-market) and 20:00 ET (post-market to overnight). The module skips the transitions that do not occur because of a weekend or a holiday. The owner sets a default window and, optionally, a window for each transition. Each window must be less than 4 hours (`MAX_TRANSITION_WINDOW`). |
 | `CorporatePauseChecker` | Reverts while the corporate provider reports a pause. Reads an `IPauseConfigurator`. The owner can replace the configurator. |
 
 ### Providers and configurators
@@ -29,6 +34,23 @@ The project supports the tokenized stocks of these providers. Each provider has 
 
 To support a different provider, write a contract that implements `IPauseConfigurator`.
 
+### Market hours and holidays
+
+`StalenessCheckerWithHolidays` and `TransitionCheckerWithHolidays` use the same market model. The market trades 24 hours a day, 5 days a week. The session of a weekday D starts at 20:00 ET on the day before D and ends at 20:00 ET on D. A holiday on D closes the market for this session. The weekly closure is from Friday 20:00 ET to Sunday 20:00 ET.
+
+Both modules inherit the shared `MarketHoliday` module, which stores the holidays. The owner sets each holiday as an ET calendar date with `setHolidayET`. If an oracle uses both modules, it has only one holiday storage, so one call changes both modules.
+
+`TransitionCheckerWithHolidays` checks these transitions on the ET date D:
+
+| ET date D | 04:00, 09:30 and 16:00 ET | 20:00 ET |
+|---|---|---|
+| Trading day (a weekday that is not a holiday) | Checked | Checked if D + 1 is a trading day |
+| Holiday | Not checked | Checked if D + 1 is a trading day |
+| Sunday | Not checked | Checked if Monday is a trading day |
+| Saturday | Not checked | Not checked |
+
+A transition at the boundary B rejects reads for `B < time <= B + window`.
+
 ### Libraries
 
 The modules use these libraries:
@@ -36,7 +58,8 @@ The modules use these libraries:
 | Library | Description |
 |---|---|
 | `UnixTimestamp` | Converts Unix timestamps to Gregorian calendar dates and back. Returns the weekday. |
-| `ETTimestamp` | US Eastern Time helpers. Calculates the daylight saving time (DST) boundaries and the ET offset, and converts UTC to ET and back. Uses the US DST rules in force since 2007. |
+| `ETTimestamp` | US Eastern Time helpers. Calculates the daylight saving time (DST) boundaries and the ET offset, and converts UTC to ET and back. Returns whether an ET timestamp or an ET date is on a weekend. Uses the US DST rules in force since 2007. |
+| `ETHelpers` | Helpers that more than one module needs. `getDSTBoundaries` returns the DST boundaries for the UTC year of a timestamp. |
 
 For the security issues that the project accepts, see [`doc/KNOWN_ISSUES.md`](./doc/KNOWN_ISSUES.md).
 
@@ -88,10 +111,10 @@ The profiles are in `foundry.toml`.
 | `default` | `forge test` | Unit and fuzz tests in `test/`. `ffi` is disabled, so the differential tests are skipped. |
 | `differential` | `FOUNDRY_PROFILE=differential forge test` | Differential tests in `test/differential/solidity/`. `ffi` is enabled. Each fuzz test does 1000 runs. The output goes to `out-differential/`, compiled for `evm_version = cancun`. |
 
-The differential tests compare `UnixTimestamp`, `ETTimestamp` and the weekend helpers of `StalenessChecker` with a reference in Python. There is also a second harness that uses `pytest`, `hypothesis` and titanoboa. For the setup, the commands and the known differences, see [`test/differential/README.md`](./test/differential/README.md).
+The differential tests compare `UnixTimestamp`, `ETTimestamp`, the weekend helpers of `StalenessChecker`, the holiday rules of `StalenessCheckerWithHolidays` and the transition rules of `TransitionCheckerWithHolidays` with a reference in Python. There is also a second harness that uses `pytest`, `hypothesis` and titanoboa. For the setup, the commands and the known differences, see [`test/differential/README.md`](./test/differential/README.md).
 
 ## TO-DO
 
-- Process half days in the holiday module (`StalenessCheckerWithHolidays`).
+- Process half days in the holiday modules (`StalenessCheckerWithHolidays`, `TransitionCheckerWithHolidays`).
 - Add a fallback oracle.
 - Do gas optimizations across the contracts.

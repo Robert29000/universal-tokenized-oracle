@@ -9,7 +9,8 @@ Environment variables:
   FORGE=/path/to/forge       forge binary (default: `forge` on PATH, then ~/.foundry/bin/forge)
   HYPOTHESIS_PROFILE=...     `default` (fast), `thorough` (many more examples)
   DIFF_EXHAUSTIVE=1          also run the exhaustive sweeps (every year 2007..9999, every day 1970..2400,
-                             every hour of 2024..2026 with and without holidays)
+                             every hour of 2024..2026 with and without holidays, every 10 minutes of
+                             2024..2026 for the transition windows)
 """
 
 from __future__ import annotations
@@ -142,3 +143,15 @@ def staleness(_build) -> EvmContract:
     return _deploy(
         "StalenessCheckerWrapper", ["address", U256, U256, U256], ["0x" + "00" * 19 + "01", 1, 1, 0]
     )
+
+
+def deploy_transition_with_holidays(holidays, default_window: int, own_windows: dict[int, int] | None = None) -> EvmContract:
+    """A new TransitionCheckerWithHolidaysWrapper (aggregator 0x...01) with `default_window`, an own window for each
+    transition in `own_windows` ({Transition index: window}) and each date of `holidays` set by the owner.
+    The `_build` fixture must have run (request it, or any contract fixture, in the test)."""
+    c = _deploy("TransitionCheckerWithHolidaysWrapper", ["address", U256], ["0x" + "00" * 19 + "01", default_window])
+    for transition, window in (own_windows or {}).items():
+        c.transact("setTransitionWindow(uint8,bool,uint256)", ["uint8", "bool", U256], [transition, True, window])
+    for d in sorted(holidays):
+        c.transact("setHolidayET(uint256,uint256,uint256,bool)", [U256, U256, U256, "bool"], [d.year, d.month, d.day, True])
+    return c

@@ -7,6 +7,10 @@ These tests compare the Solidity date and time code with an independent referenc
 - `src/libraries/UnixTimestamp.sol` and `src/libraries/ETTimestamp.sol`.
 - The weekend helpers of `src/modules/StalenessChecker.sol`.
 - The holiday rules of `src/modules/StalenessCheckerWithHolidays.sol`.
+- The session transition rules of `src/modules/TransitionCheckerWithHolidays.sol`.
+
+`ETHelpers.getDSTBoundaries` is not compared on its own. Each module uses it to get the DST boundaries, so the module
+tests cover it.
 
 There are two harnesses. Both use the same reference:
 
@@ -23,6 +27,7 @@ test/differential/
 │   ├── DifferentialBase.sol
 │   ├── ETTimestampDifferential.t.sol
 │   ├── StalenessCheckerWithHolidaysDifferential.t.sol
+│   ├── TransitionCheckerWithHolidaysDifferential.t.sol
 │   ├── UnixTimestampDifferential.t.sol
 │   └── ffi_reference.py
 └── python/               # pytest + titanoboa (py-evm) harness
@@ -30,12 +35,13 @@ test/differential/
     ├── requirements.txt
     ├── test_et_timestamp.py
     ├── test_staleness_with_holidays.py
+    ├── test_transition_with_holidays.py
     └── test_unix_timestamp.py
 ```
 
 Both harnesses call the wrapper contracts in `test/mocks/wrappers/` (`UnixTimestampWrapper`,
-`ETTimestampWrapper`, `StalenessCheckerWrapper`, `StalenessCheckerWithHolidaysWrapper`), which expose the internal
-functions as external calls.
+`ETTimestampWrapper`, `StalenessCheckerWrapper`, `StalenessCheckerWithHolidaysWrapper`,
+`TransitionCheckerWithHolidaysWrapper`), which expose the internal functions as external calls.
 
 ## What is compared
 
@@ -62,6 +68,15 @@ functions as external calls.
   `holiday_staleness_outcome`) does not copy the contract algorithm. It finds the last trading day before the current
   session with Python dates. The windows cover 2007 to 9963, the DST switches, and 20:00 ET of random days. The
   Python harness also checks the NYSE holidays of 2024 to 2026.
+- **TransitionCheckerWithHolidays:** each case sets random holidays in a 28-day window that starts on a Monday, a random
+  default transition window and random own windows for some transitions (often 0, 1 or 2 seconds). At one timestamp, the
+  tests compare the `_afterRead` result: accepted, or the error of the transition. The reference (`transition_outcome`)
+  does not copy the contract algorithm. On the New York date D it finds the 04:00, 09:30 and 16:00 ET transitions if D
+  is a trading day, and the 20:00 ET transition if D + 1 is a trading day. It checks D and the day before in real UTC
+  instants, so it does not depend on the windows ending before 00:00 ET. The tests target the boundaries of random
+  days (from before the boundary to after the longest window), the DST switches, and the day before, the day of and the
+  day after real holidays. The Python harness also checks every boundary of every day of 2024 to 2026 with the NYSE
+  holidays.
 
 ## Known and expected differences and skipped cases
 
@@ -86,7 +101,7 @@ Run all commands from the repository root.
 tests are skipped.
 
 ```sh
-FOUNDRY_PROFILE=differential forge test                              # 1000 runs per fuzz test, ~60 s
+FOUNDRY_PROFILE=differential forge test                              # 1000 runs per fuzz test, ~90 s
 FOUNDRY_PROFILE=differential FOUNDRY_FUZZ_RUNS=10000 forge test      # deeper run
 DIFF_PYTHON=.venv/bin/python FOUNDRY_PROFILE=differential forge test # choose the interpreter
 ```
@@ -98,16 +113,17 @@ DIFF_PYTHON=.venv/bin/python FOUNDRY_PROFILE=differential forge test # choose th
 ```sh
 python3 -m venv .venv
 .venv/bin/pip install -r test/differential/python/requirements.txt
-.venv/bin/python -m pytest test/differential/python                                # ~3 min
+.venv/bin/python -m pytest test/differential/python                                # ~5 min
 HYPOTHESIS_PROFILE=thorough .venv/bin/python -m pytest test/differential/python    # 5000 examples per property
-DIFF_EXHAUSTIVE=1 .venv/bin/python -m pytest test/differential/python              # + every day 1970-2400, every DST year, hourly 2024-2026, all NYSE holidays 2024-2026
+DIFF_EXHAUSTIVE=1 .venv/bin/python -m pytest test/differential/python              # + every day 1970-2400, every DST year, hourly 2024-2026, all NYSE holidays 2024-2026, transitions every 10 min 2024-2026
 ```
 
 `conftest.py` first runs `FOUNDRY_PROFILE=differential forge build`. This writes the build to
 `out-differential/`, compiled for `evm_version = cancun`, because py-evm does not support Osaka.
-It then deploys `UnixTimestampWrapper`, `ETTimestampWrapper`, `StalenessCheckerWrapper` and
-`StalenessCheckerWithHolidaysWrapper` from `test/mocks/wrappers/` and calls them with raw ABI calldata. The holiday tests
-deploy a new `StalenessCheckerWithHolidaysWrapper` for each case and set its holidays as the owner.
+It then deploys `UnixTimestampWrapper`, `ETTimestampWrapper`, `StalenessCheckerWrapper`,
+`StalenessCheckerWithHolidaysWrapper` and `TransitionCheckerWithHolidaysWrapper` from `test/mocks/wrappers/` and calls
+them with raw ABI calldata. The holiday and transition tests deploy a new wrapper for each case and set its holidays
+and windows as the owner.
 
 - Set `DIFF_SKIP_BUILD=1` to reuse an existing build.
 - Set `FORGE=/path/to/forge` if `forge` is not on your `PATH`.

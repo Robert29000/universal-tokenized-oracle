@@ -6,6 +6,7 @@ import { MarketHoliday } from "./shared/MarketHoliday.sol";
 
 import { ETTimestamp } from "../libraries/ETTimestamp.sol";
 import { UnixTimestamp } from "../libraries/UnixTimestamp.sol";
+import { ETHelpers } from "../libraries/ETHelpers.sol";
 
 import { IStalenessCheckerWithHolidays } from "./interfaces/IStalenessCheckerWithHolidays.sol";
 
@@ -62,7 +63,7 @@ abstract contract StalenessCheckerWithHolidays is StalenessChecker, MarketHolida
     ///      Reverts with `UnixTimestamp.InvalidYear` if the ET year of `block.timestamp` is 9999 or greater.
     /// @param _round The round data returned by `aggregator.latestRoundData()`.
     function _checkTradingStaleness(RoundData memory _round) internal virtual override view {
-        (uint256 dstStartTimestamp, uint256 dstEndTimestamp) = _getDSTBoundaries(block.timestamp);
+        (uint256 dstStartTimestamp, uint256 dstEndTimestamp) = ETHelpers.getDSTBoundaries(block.timestamp);
 
         bool isETWeekendTrading = _isETWeekendTrading(block.timestamp, dstStartTimestamp, dstEndTimestamp, reopenTimeWait);
         bool isETHolidayTrading = _isETHolidayTrading(block.timestamp, dstStartTimestamp, dstEndTimestamp, reopenTimeWait);

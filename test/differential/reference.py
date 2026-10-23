@@ -1,4 +1,5 @@
-"""Independent Python reference model for src/libraries/{UnixTimestamp,ETTimestamp}.sol.
+"""Independent Python reference model for src/libraries/{UnixTimestamp,ETTimestamp}.sol and the market rules of
+src/modules/{StalenessChecker,StalenessCheckerWithHolidays,TransitionCheckerWithHolidays}.sol.
 
 Everything here is derived from the Python standard library (datetime, calendar, zoneinfo),
 never from the Solidity algorithms, so it can act as a differential-testing oracle.
@@ -261,3 +262,34 @@ def holiday_staleness_outcome(
     if updated_at + trading_staleness < last_market_close(ts, holidays):
         return OUTCOME_TRADING_STALENESS
     return OUTCOME_OK
+
+
+# --------------------------------------------------------------------------- TransitionCheckerWithHolidays
+
+# New York wall-clock time of each session transition, in ITransitionCheckerWithHolidays.Transition order:
+# OvernightToPreMarket, PreMarketToRegular, RegularToPostMarket, PostMarketToOvernight.
+TRANSITION_TIMES = (time(4, 0), time(9, 30), time(16, 0), time(20, 0))
+POST_MARKET_TO_OVERNIGHT = 3
+
+# Outcome codes of TransitionCheckerWithHolidays._afterRead: 0 accepted, 1 + i in the window of Transition i.
+TRANSITION_OK = 0
+
+
+def transition_outcome(ts: int, holidays: frozenset[date], windows: tuple[int, int, int, int]) -> int:
+    """Expected result of TransitionCheckerWithHolidays._afterRead at block.timestamp == ts (answer > 0).
+
+    `windows[i]` is the window in force for Transition i. A transition is in force for boundary < ts <= boundary +
+    window. On the New York date D, the 04:00, 09:30 and 16:00 transitions occur if D is a trading day. The 20:00
+    transition is the reopen of the session of D + 1, so it occurs if D + 1 is a trading day. The model checks the
+    boundaries of the New York date of ts and of the day before, in real UTC instants.
+    """
+    today = datetime.fromtimestamp(ts, tz=NEW_YORK).date()
+    for d in (today - timedelta(days=1), today):
+        for i, at in enumerate(TRANSITION_TIMES):
+            session_day = d + timedelta(days=1) if i == POST_MARKET_TO_OVERNIGHT else d
+            if not _is_trading_day(session_day, holidays):
+                continue
+            boundary = int(datetime.combine(d, at, tzinfo=NEW_YORK).timestamp())
+            if boundary < ts <= boundary + windows[i]:
+                return 1 + i
+    return TRANSITION_OK

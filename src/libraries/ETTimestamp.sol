@@ -76,6 +76,20 @@ library ETTimestamp {
         return UnixTimestamp.isWeekendDay(etTimestamp);
     }
 
+    /// @notice Returns true if an ET calendar date is a Saturday or a Sunday.
+    /// @dev Use this function when the caller already has the ET date, for example from `UnixTimestamp.getDate` of an
+    ///      ET timestamp. The date is already in ET, so the function does not need the DST boundaries.
+    ///      Reverts with `UnixTimestamp.InvalidYear`, `UnixTimestamp.InvalidMonth` or `UnixTimestamp.InvalidDay` if the
+    ///      date is not valid (see `UnixTimestamp.getTimestamp`).
+    /// @param _etYear The calendar year of the ET date, from 1970 to 9999.
+    /// @param _etMonth The month of the ET date, from 1 to 12.
+    /// @param _etDay The day of the month of the ET date.
+    /// @return True if the ET date is a Saturday or a Sunday.
+    function isETWeekendByDate(uint256 _etYear, uint256 _etMonth, uint256 _etDay) internal pure returns (bool) {
+        uint256 etTimestamp = UnixTimestamp.getTimestamp(_etYear, _etMonth, _etDay);
+        return UnixTimestamp.isWeekendDay(etTimestamp);
+    }
+
 
     /// @notice Returns the ET offset from UTC in force at a timestamp.
     /// @dev Returns `EDT_OFFSET` if `dstStartTimestamp <= _timestamp < dstEndTimestamp`, else `EST_OFFSET`.

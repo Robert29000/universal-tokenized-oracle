@@ -25,6 +25,10 @@ Usage:
       Holidays are the weekdays firstDay + i days for every set bit i of <mask> (28 days).
       Outcomes (0 ok, 1 MaxStalenessReached, 2 TradingStalenessReached) are for updatedAt equal to
       ts - age, lastClose - tradingStaleness and lastClose - tradingStaleness - 1.
+  ffi_reference.py transition <ts> <firstDay> <mask> <w0> <w1> <w2> <w3>
+      -> (uint256 outcome)    0 accepted, 1 + i in the window of Transition i
+      Holidays as for `holiday`. <wi> is the window in force for Transition i (OvernightToPreMarket = 0 ...
+      PostMarketToOvernight = 3).
 """
 
 from __future__ import annotations
@@ -92,6 +96,9 @@ def main(argv: list[str]) -> str:
             outcome(close - trading),
             outcome(close - trading - 1),
         )
+    if cmd == "transition":
+        ts, first_day, mask, *windows = args
+        return encode(ref.transition_outcome(ts, ref.holidays_from_mask(first_day, mask), tuple(windows)))
     raise SystemExit(f"unknown command: {cmd}")
 
 

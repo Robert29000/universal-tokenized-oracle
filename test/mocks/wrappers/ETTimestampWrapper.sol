@@ -14,6 +14,10 @@ contract ETTimestampWrapper {
         return ETTimestamp.isETWeekend(_timestamp, _dstStart, _dstEnd);
     }
 
+    function isETWeekendByDate(uint256 _etYear, uint256 _etMonth, uint256 _etDay) external pure returns (bool) {
+        return ETTimestamp.isETWeekendByDate(_etYear, _etMonth, _etDay);
+    }
+
     function getETOffset(uint256 _timestamp, uint256 _dstStart, uint256 _dstEnd) external pure returns (uint256) {
         return ETTimestamp.getETOffset(_timestamp, _dstStart, _dstEnd);
     }

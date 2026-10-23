@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import { UniversalOracleBase } from "../UniversalOracleBase.sol";
 import {ETTimestamp} from "../libraries/ETTimestamp.sol";
 import {UnixTimestamp} from "../libraries/UnixTimestamp.sol";
+import {ETHelpers} from "../libraries/ETHelpers.sol";
 
 import {IStalenessChecker} from "./interfaces/IStalenessChecker.sol";
 
@@ -22,7 +23,7 @@ import {IStalenessChecker} from "./interfaces/IStalenessChecker.sol";
 ///         Otherwise it reverts with `TradingStalenessReached`.
 ///      Step 2 is in the virtual `_checkTradingStaleness` function, so derived modules can extend it.
 ///      Daylight saving time is handled with the US rules for the UTC year of `block.timestamp`
-///      (see `ETTimestamp`). US market holidays and early closes are not handled.
+///      (see `ETHelpers.getDSTBoundaries` and `ETTimestamp`). US market holidays and early closes are not handled.
 abstract contract StalenessChecker is UniversalOracleBase, IStalenessChecker {
 
     /// @dev Weekday number of Saturday in `UnixTimestamp.getWeekday` (Monday = 0).
@@ -86,7 +87,7 @@ abstract contract StalenessChecker is UniversalOracleBase, IStalenessChecker {
     ///        `_round.updatedAt + tradingStaleness < lastFridayClose`.
     /// @param _round The round data returned by `aggregator.latestRoundData()`.
     function _checkTradingStaleness(RoundData memory _round) internal virtual view {
-        (uint256 dstStartTimestamp, uint256 dstEndTimestamp) = _getDSTBoundaries(block.timestamp);
+        (uint256 dstStartTimestamp, uint256 dstEndTimestamp) = ETHelpers.getDSTBoundaries(block.timestamp);
 
         if (!_isETWeekendTrading(block.timestamp, dstStartTimestamp, dstEndTimestamp, reopenTimeWait)) {
             revert TradingStalenessReached();
@@ -160,17 +161,5 @@ abstract contract StalenessChecker is UniversalOracleBase, IStalenessChecker {
         }
 
         return closeUTC;
-    }
-
-    /// @notice Returns the US daylight saving time boundaries for the UTC year of a timestamp.
-    /// @dev Uses the UTC calendar year of `_timestamp`. Close to New Year the ET date can be in the
-    ///      previous year, but both dates are in standard time, so the result is the same.
-    /// @param _timestamp Unix timestamp in seconds (UTC).
-    /// @return Unix timestamp (UTC) when daylight saving time starts (second Sunday of March, 07:00 UTC).
-    /// @return Unix timestamp (UTC) when daylight saving time ends (first Sunday of November, 06:00 UTC).
-    function _getDSTBoundaries(uint256 _timestamp) internal pure returns (uint256, uint256) {
-        (uint256 year, ,) = UnixTimestamp.getDate(_timestamp);
-
-        return ETTimestamp.getETTransitionBoundariesInUTC(year);
     }
 }
