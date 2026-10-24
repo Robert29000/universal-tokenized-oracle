@@ -189,6 +189,36 @@ contract TransitionManagerTest is Test {
         }
     }
 
+    // ================================================================== _getTransitionWindow
+
+    function test_getTransitionWindow_DefaultWindow() public view {
+        for (uint8 i = 0; i < 4; i++) {
+            assertEq(manager.exposed_getTransitionWindow(i), WINDOW);
+        }
+    }
+
+    function test_getTransitionWindow_OwnWindowReplacesDefault() public {
+        manager.setTransitionWindow(ITransitionManager.Transition.PreMarketToRegular, true, 1 hours);
+        manager.setTransitionWindow(ITransitionManager.Transition.RegularToPostMarket, true, 0);
+        manager.setTransitionWindow(ITransitionManager.Transition.PostMarketToOvernight, false, 2 hours);
+        assertEq(manager.exposed_getTransitionWindow(OVERNIGHT_TO_PRE), WINDOW, "not set");
+        assertEq(manager.exposed_getTransitionWindow(PRE_TO_REGULAR), 1 hours, "own window");
+        assertEq(manager.exposed_getTransitionWindow(REGULAR_TO_POST), 0, "own zero window");
+        assertEq(manager.exposed_getTransitionWindow(POST_TO_OVERNIGHT), WINDOW, "is_set false");
+        manager.setDefaultTransitionWindow(1 minutes);
+        assertEq(manager.exposed_getTransitionWindow(OVERNIGHT_TO_PRE), 1 minutes, "new default");
+        assertEq(manager.exposed_getTransitionWindow(PRE_TO_REGULAR), 1 hours, "own window kept");
+    }
+
+    // ================================================================== _getTransitionBoundary
+
+    function test_getTransitionBoundary() public view {
+        for (uint8 i = 0; i < 4; i++) {
+            assertEq(manager.exposed_getTransitionBoundary(i, DAY), DAY + _boundaryOf(i));
+            assertEq(manager.exposed_getTransitionBoundary(i, 0), _boundaryOf(i));
+        }
+    }
+
     // ================================================================== _isTransition
 
     function test_isTransition_DefaultWindowEdges() public view {
@@ -253,5 +283,7 @@ contract TransitionManagerTest is Test {
         uint256 window = _isSet ? _window : WINDOW;
         bool expected = current > boundary && current <= boundary + window;
         assertEq(manager.exposed_isTransition(t, current, day), expected);
+        assertEq(manager.exposed_getTransitionWindow(t), window);
+        assertEq(manager.exposed_getTransitionBoundary(t, day), boundary);
     }
 }

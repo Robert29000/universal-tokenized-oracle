@@ -144,6 +144,19 @@ library ETTimestamp {
         return _toUTCTimestamp(_etTimestamp, dstStartTimestamp, dstEndTimestamp);
     }
 
+    /// @notice Converts an ET timestamp to a UTC timestamp. Calculates the DST boundaries from the ET year of the
+    ///         timestamp.
+    /// @dev Finds the ET year with `UnixTimestamp.getDate(_etTimestamp)`. Use the overload with `_year` if the caller
+    ///      already knows the year. Reverts with `UnixTimestamp.InvalidYear` if the ET year is greater than 9999.
+    /// @param _etTimestamp ET timestamp in seconds (a UTC timestamp minus the ET offset, see `toETTimestamp`).
+    /// @return The Unix timestamp (UTC), in seconds.
+    function toUTCTimestamp(uint256 _etTimestamp) internal pure returns (uint256) {
+        (uint256 year, , ) = UnixTimestamp.getDate(_etTimestamp);
+        (uint256 dstStartTimestamp, uint256 dstEndTimestamp) = getETTransitionBoundariesInUTC(year);
+
+        return _toUTCTimestamp(_etTimestamp, dstStartTimestamp, dstEndTimestamp);
+    }
+
     /// @notice Converts an ET timestamp to a UTC timestamp.
     /// @dev Inverse of `toETTimestamp`. Adds `EDT_OFFSET`, then adds 1 more hour if EST is in force at
     ///      that instant. The EDT guess is at most 1 hour from the correct UTC instant, so it is on the correct side

@@ -1,5 +1,5 @@
 """Independent Python reference model for src/libraries/{UnixTimestamp,ETTimestamp}.sol and the market rules of
-src/modules/{StalenessChecker,StalenessCheckerWithHolidays,TransitionCheckerWithHolidays}.sol.
+src/modules/{StalenessChecker,StalenessCheckerWithHolidays,TransitionCheckerWithHolidays,TransitionEMAWithHolidays}.sol.
 
 Everything here is derived from the Python standard library (datetime, calendar, zoneinfo),
 never from the Solidity algorithms, so it can act as a differential-testing oracle.
@@ -12,6 +12,7 @@ Used by:
 from __future__ import annotations
 
 import calendar
+from decimal import Decimal, localcontext
 from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -275,9 +276,10 @@ POST_MARKET_TO_OVERNIGHT = 3
 TRANSITION_OK = 0
 
 
-def transition_outcome(ts: int, holidays: frozenset[date], windows: tuple[int, int, int, int]) -> int:
-    """Expected result of TransitionCheckerWithHolidays._afterRead at block.timestamp == ts (answer > 0).
+def transition_window(ts: int, holidays: frozenset[date], windows: tuple[int, int, int, int]) -> tuple[int, int]:
+    """(outcome, boundary): the transition whose window contains ts, and the UTC timestamp of its boundary.
 
+    `outcome` is 0 if ts is in no window, else 1 + i for Transition i. `boundary` is 0 if `outcome` is 0.
     `windows[i]` is the window in force for Transition i. A transition is in force for boundary < ts <= boundary +
     window. On the New York date D, the 04:00, 09:30 and 16:00 transitions occur if D is a trading day. The 20:00
     transition is the reopen of the session of D + 1, so it occurs if D + 1 is a trading day. The model checks the
@@ -291,5 +293,47 @@ def transition_outcome(ts: int, holidays: frozenset[date], windows: tuple[int, i
                 continue
             boundary = int(datetime.combine(d, at, tzinfo=NEW_YORK).timestamp())
             if boundary < ts <= boundary + windows[i]:
-                return 1 + i
-    return TRANSITION_OK
+                return 1 + i, boundary
+    return TRANSITION_OK, 0
+
+
+def transition_outcome(ts: int, holidays: frozenset[date], windows: tuple[int, int, int, int]) -> int:
+    """Expected result of TransitionCheckerWithHolidays._afterRead at block.timestamp == ts (answer > 0).
+    0 accepted, 1 + i in the window of Transition i (see transition_window)."""
+    return transition_window(ts, holidays, windows)[0]
+
+
+# --------------------------------------------------------------------------- TransitionEMAWithHolidays
+
+WAD = 10**18
+
+
+def ema_alpha(elapsed: int, window: int) -> int:
+    """floor(exp(-floor(elapsed * 1e18 / window) / 1e18) * 1e18), with 80 significant digits (not FixedPointMathLib)."""
+    power = elapsed * WAD // window
+    with localcontext() as ctx:
+        ctx.prec = 80
+        return int((Decimal(-power) / WAD).exp() * WAD)
+
+
+def ema_price_range(
+    ts: int, boundary: int, window: int, rounds: list[tuple[int, int]]
+) -> tuple[int, int]:
+    """(lo, hi): the range of the expected TransitionEMAWithHolidays price at block.timestamp == ts.
+
+    `rounds` is the round history of the current phase as (answer, updatedAt), oldest first. The last round is the
+    latest round. `boundary` is the UTC boundary of the transition window that contains ts, or 0 if ts is in no window.
+    The previous price is the answer of the last round with updatedAt <= boundary, found with a linear scan.
+    solady's expWad differs from the exact exponential by less than 1.01 wei (measured), so the contract alpha is in
+    [alpha - 1, alpha + 1]. The price is linear in alpha, so the range is the price at these two values.
+    """
+    latest = rounds[-1][0]
+    if boundary == 0:
+        return latest, latest
+    before = [answer for answer, updated_at in rounds if updated_at <= boundary]
+    if not before:
+        return latest, latest
+    prev = before[-1]
+    alpha = ema_alpha(ts - boundary, window)
+    prices = [(latest * (WAD - a) + prev * a) // WAD for a in (max(alpha - 1, 0), min(alpha + 1, WAD))]
+    return min(prices), max(prices)

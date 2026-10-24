@@ -68,8 +68,7 @@ abstract contract UniversalOracleBase is Ownable, IUniversalOracleBase {
     }
 
     /// @notice Hook that converts the validated answer into the returned price.
-    /// @dev Runs after `_afterRead`, which already checked that `_round.answer > 0`. The base implementation casts
-    ///      the `int256` answer to `uint256`. Overrides can return another price, for example a smoothed price.
+    /// @dev Runs after `_afterRead`. The base implementation casts the `int256` answer to `uint256`. Overrides can return another price, for example a smoothed price.
     /// @param _round The round data returned by `aggregator.latestRoundData()`.
     /// @return The price, scaled by `decimals()`.
     function _adjustAnswer(RoundData memory _round) internal virtual view returns (uint256) {

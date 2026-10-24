@@ -8,6 +8,7 @@ These tests compare the Solidity date and time code with an independent referenc
 - The weekend helpers of `src/modules/StalenessChecker.sol`.
 - The holiday rules of `src/modules/StalenessCheckerWithHolidays.sol`.
 - The session transition rules of `src/modules/TransitionCheckerWithHolidays.sol`.
+- The smoothed price of `src/modules/TransitionEMAWithHolidays.sol`.
 
 `ETHelpers.getDSTBoundaries` is not compared on its own. Each module uses it to get the DST boundaries, so the module
 tests cover it.
@@ -28,6 +29,7 @@ test/differential/
 │   ├── ETTimestampDifferential.t.sol
 │   ├── StalenessCheckerWithHolidaysDifferential.t.sol
 │   ├── TransitionCheckerWithHolidaysDifferential.t.sol
+│   ├── TransitionEMAWithHolidaysDifferential.t.sol
 │   ├── UnixTimestampDifferential.t.sol
 │   └── ffi_reference.py
 └── python/               # pytest + titanoboa (py-evm) harness
@@ -35,13 +37,16 @@ test/differential/
     ├── requirements.txt
     ├── test_et_timestamp.py
     ├── test_staleness_with_holidays.py
+    ├── test_transition_ema_with_holidays.py
     ├── test_transition_with_holidays.py
     └── test_unix_timestamp.py
 ```
 
 Both harnesses call the wrapper contracts in `test/mocks/wrappers/` (`UnixTimestampWrapper`,
 `ETTimestampWrapper`, `StalenessCheckerWrapper`, `StalenessCheckerWithHolidaysWrapper`,
-`TransitionCheckerWithHolidaysWrapper`), which expose the internal functions as external calls.
+`TransitionCheckerWithHolidaysWrapper`, `TransitionEMAWithHolidaysWrapper`), which expose the internal functions as
+external calls. The `TransitionEMAWithHolidays` tests also use `test/mocks/MockPhaseAggregator.sol`, a stand-in for a
+Chainlink proxy with a round history.
 
 ## What is compared
 
@@ -55,7 +60,7 @@ Both harnesses call the wrapper contracts in `test/mocks/wrappers/` (`UnixTimest
 - **ETTimestamp:** `getETTransitionBoundariesInUTC`, `getETOffset`, `toETTimestamp`, `isETWeekend`
   and `adjustedUTCForETOffset`.
 - **ET to UTC (`toUTCTimestamp`):** the tests compare the result for both allowed year arguments. These are the ET
-  year of the input and the UTC year of the result. The two DST transition hours are skipped (see below). A separate test checks that
+  year of the input and the UTC year of the result. They also compare the overload without a year argument. The two DST transition hours are skipped (see below). A separate test checks that
   20:00 ET of every day is never skipped.
 - **StalenessChecker weekend helpers:** `_isETWeekendTrading` (with a grace period of zero and with a
   random grace period) and `_getLastETFridayCloseTimestampInUTC`.
@@ -77,8 +82,24 @@ Both harnesses call the wrapper contracts in `test/mocks/wrappers/` (`UnixTimest
   days (from before the boundary to after the longest window), the DST switches, and the day before, the day of and the
   day after real holidays. The Python harness also checks every boundary of every day of 2024 to 2026 with the NYSE
   holidays.
+- **TransitionEMAWithHolidays:** each case sets random holidays and windows as for `TransitionCheckerWithHolidays`.
+  The reference (`transition_window`) gives the window that contains the timestamp and the UTC boundary of the window.
+  The test then pushes 0 to 5 rounds at or before the boundary and 0 to 3 rounds after it to a `MockPhaseAggregator`,
+  with random answers up to 1e30. The last round before the boundary is at the boundary, 1 second before it, or up to
+  1 hour before it. The tests compare `_price()` with `ema_price_range`. This reference finds the previous price with a
+  linear scan and calculates the exponential with an 80-digit `Decimal`, not with solady. The tests target the same
+  timestamps as the `TransitionCheckerWithHolidays` tests, and the start, middle, end and first second after the window
+  near real holidays.
 
 ## Known and expected differences and skipped cases
+
+- **Exponential in TransitionEMAWithHolidays:** solady's `expWad` is not exact. Over 3000 measured points in
+  `[-1e18, 0]`, it was between 1.0001 wei below and 0.011 wei above the exact value. Thus `ema_price_range` gives the
+  price for `alpha - 1` and for `alpha + 1`, with `alpha` the exact value rounded down. The contract price must be in
+  this range. The price is linear in `alpha`, so the range is small (`|P_latest - P_prev| / 1e18` per wei of `alpha`).
+- **Previous phases in TransitionEMAWithHolidays:** the tests do not start a new phase. The contract reads only the
+  current phase (see KI-6 in `doc/KNOWN_ISSUES.md`). The unit tests in `test/modules/TransitionEMAWithHolidays.t.sol`
+  check this behavior.
 
 - **DST years before 2007:** ETTimestamp always applies the US DST rule that started in 2007. The
   tz database uses the older rules before that year. This difference is checked explicitly in
@@ -101,7 +122,7 @@ Run all commands from the repository root.
 tests are skipped.
 
 ```sh
-FOUNDRY_PROFILE=differential forge test                              # 1000 runs per fuzz test, ~90 s
+FOUNDRY_PROFILE=differential forge test                              # 1000 runs per fuzz test, ~110 s
 FOUNDRY_PROFILE=differential FOUNDRY_FUZZ_RUNS=10000 forge test      # deeper run
 DIFF_PYTHON=.venv/bin/python FOUNDRY_PROFILE=differential forge test # choose the interpreter
 ```
@@ -113,7 +134,7 @@ DIFF_PYTHON=.venv/bin/python FOUNDRY_PROFILE=differential forge test # choose th
 ```sh
 python3 -m venv .venv
 .venv/bin/pip install -r test/differential/python/requirements.txt
-.venv/bin/python -m pytest test/differential/python                                # ~5 min
+.venv/bin/python -m pytest test/differential/python                                # ~7 min
 HYPOTHESIS_PROFILE=thorough .venv/bin/python -m pytest test/differential/python    # 5000 examples per property
 DIFF_EXHAUSTIVE=1 .venv/bin/python -m pytest test/differential/python              # + every day 1970-2400, every DST year, hourly 2024-2026, all NYSE holidays 2024-2026, transitions every 10 min 2024-2026
 ```
@@ -121,9 +142,10 @@ DIFF_EXHAUSTIVE=1 .venv/bin/python -m pytest test/differential/python           
 `conftest.py` first runs `FOUNDRY_PROFILE=differential forge build`. This writes the build to
 `out-differential/`, compiled for `evm_version = cancun`, because py-evm does not support Osaka.
 It then deploys `UnixTimestampWrapper`, `ETTimestampWrapper`, `StalenessCheckerWrapper`,
-`StalenessCheckerWithHolidaysWrapper` and `TransitionCheckerWithHolidaysWrapper` from `test/mocks/wrappers/` and calls
-them with raw ABI calldata. The holiday and transition tests deploy a new wrapper for each case and set its holidays
-and windows as the owner.
+`StalenessCheckerWithHolidaysWrapper`, `TransitionCheckerWithHolidaysWrapper` and `TransitionEMAWithHolidaysWrapper` from
+`test/mocks/wrappers/`, and `MockPhaseAggregator` from `test/mocks/`, and calls them with raw ABI calldata. The holiday
+and transition tests deploy a new wrapper for each case and set its holidays and windows as the owner. The
+`TransitionEMAWithHolidays` tests also deploy a new `MockPhaseAggregator` for each case and push its rounds.
 
 - Set `DIFF_SKIP_BUILD=1` to reuse an existing build.
 - Set `FORGE=/path/to/forge` if `forge` is not on your `PATH`.

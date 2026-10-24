@@ -21,4 +21,14 @@ contract TransitionManagerWrapper is TransitionManager {
     function exposed_getTransitionOffset(uint8 _transition) external pure returns (uint256) {
         return _getTransitionOffset(Transition(_transition));
     }
+
+    /// @dev `_transition` is the `Transition` enum as uint8.
+    function exposed_getTransitionWindow(uint8 _transition) external view returns (uint256) {
+        return _getTransitionWindow(Transition(_transition));
+    }
+
+    /// @dev `_transition` is the `Transition` enum as uint8.
+    function exposed_getTransitionBoundary(uint8 _transition, uint256 _etDayTimestamp) external pure returns (uint256) {
+        return _getTransitionBoundary(Transition(_transition), _etDayTimestamp);
+    }
 }

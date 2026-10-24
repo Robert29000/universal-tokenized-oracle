@@ -9,6 +9,8 @@ This file lists the issues that the project knows about and accepts. Each issue 
 | [KI-2](#ki-2-the-sequencer-check-accepts-a-round-with-startedat-of-zero) | The sequencer check accepts a round with `startedAt` of zero | `L2SequencerChecker` | Acknowledged |
 | [KI-3](#ki-3-the-xstocks-pause-ends-before-the-feed-reports-a-new-price) | The xStocks pause ends before the feed reports a new price | `xStocksPauseConfigurator` | Acknowledged |
 | [KI-4](#ki-4-a-pending-update-hides-the-pause-window-of-the-last-activation) | A pending update hides the pause window of the last activation | `xStocksPauseConfigurator` | Acknowledged |
+| [KI-5](#ki-5-the-smoothed-price-is-not-a-classic-exponential-moving-average) | The smoothed price is not a classic exponential moving average | `TransitionEMAWithHolidays` | Acknowledged |
+| [KI-6](#ki-6-the-search-for-the-previous-price-reads-only-the-current-phase-of-the-proxy) | The search for the previous price reads only the current phase of the proxy | `TransitionEMAWithHolidays` | Acknowledged |
 
 ## KI-1: The oracle accepts the pre-pause round after an unpause
 
@@ -52,3 +54,35 @@ This file lists the issues that the project knows about and accepts. Each issue 
 **Status:** Acknowledged.
 
 **Reason:** The project assumes that multiplier updates do not occur frequently. A multiplier update is the result of a corporate action.
+
+## KI-5: The smoothed price is not a classic exponential moving average
+
+**Location:** `TransitionEMAWithHolidays._applyEMA`
+
+**Description:** The module does not calculate a classic exponential moving average (EMA). A classic EMA uses each price update of the feed and keeps the last average in storage. The module uses only two prices:
+
+- The answer of the latest round.
+- The answer of the last round that the feed updated at or before the boundary of the transition.
+
+The module ignores the rounds between these two rounds. Thus a price in the window has an effect on the result only while it is the latest price.
+
+In the window, the weight of the price before the boundary decreases from almost 1 to `exp(-1)`, about 0.368. After the last second of the window, the module returns the latest price. Thus at the end of the window, the returned price can change by about 36.8% of the difference between the two prices in one second.
+
+**Status:** Acknowledged.
+
+**Reason:** The module is a smoothing function for the transition window. It is not a price average. A classic EMA must write its value to storage at each price update. The oracle reads the price in `view` functions, so it cannot write to storage. To calculate an EMA from the round history, the module must read each round in the window. This increases the gas cost of each read in the window. The module reads at most `ceil(log2(n + 1))` rounds, with `n` the aggregator round id of the latest round. Set the transition windows so that the step at the end of the window is acceptable for the consumers.
+
+## KI-6: The search for the previous price reads only the current phase of the proxy
+
+**Location:** `TransitionEMAWithHolidays._getLastPriceBeforeTransition`
+
+**Description:** A Chainlink proxy starts a new phase each time it changes its aggregator. The module searches for the previous price only in the rounds of the current phase. If the proxy started the current phase after the boundary of the transition, no round of the current phase is before the boundary. In this case, the module returns the latest price and does not smooth it.
+
+**Status:** Acknowledged.
+
+**Reason:** The project does not search the previous phases, for two reasons:
+
+- Gas: a search in a previous phase needs more calls to the proxy and to the aggregator of that phase.
+- Access control: the binary search must know the last round id of the phase. The proxy does not return the last round id of a previous phase. The module must read it from the aggregator of the phase. An aggregator can have access control, so the read can revert.
+
+A change of aggregator does not occur frequently. If it occurs in a transition window, the module returns the latest price, as an oracle without this module does.

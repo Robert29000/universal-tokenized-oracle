@@ -21,6 +21,7 @@ The checks are in separate modules. Each module overrides one or more of these h
 | `StalenessChecker` | Reverts if the price is older than `maxStaleness`. While the market trades, it reverts if the price is older than `tradingStaleness`. During the weekend closure (Friday 20:00 ET to Sunday 20:00 ET), it accepts a price that was fresh at the Friday close. A grace period `reopenTimeWait` applies after the Sunday reopen. |
 | `StalenessCheckerWithHolidays` | Extends `StalenessChecker` with US market holidays. The owner sets each holiday date. On a holiday, the module accepts a price that was fresh at the last market close. |
 | `TransitionCheckerWithHolidays` | Reverts for a short window after each US market session transition: 04:00 ET (overnight to pre-market), 09:30 ET (pre-market to regular), 16:00 ET (regular to post-market) and 20:00 ET (post-market to overnight). The module skips the transitions that do not occur because of a weekend or a holiday. |
+| `TransitionEMAWithHolidays` | Smooths the price for a short window after each US market session transition, with the same transitions and the same weekend and holiday rules as `TransitionCheckerWithHolidays`. In the window, it returns a weighted average of the latest price and the last price before the transition. The weight of the last price before the transition decreases exponentially. |
 | `CorporatePauseChecker` | Reverts while the corporate provider reports a pause. Reads an `IPauseConfigurator`. The owner can replace the configurator. |
 
 ### Providers and configurators
@@ -48,11 +49,11 @@ If an oracle uses two modules that inherit the same shared module, it has only o
 
 ### Market hours and holidays
 
-`StalenessCheckerWithHolidays` and `TransitionCheckerWithHolidays` use the same market model. The market trades 24 hours a day, 5 days a week. The session of a weekday D starts at 20:00 ET on the day before D and ends at 20:00 ET on D. A holiday on D closes the market for this session. The weekly closure is from Friday 20:00 ET to Sunday 20:00 ET.
+`StalenessCheckerWithHolidays`, `TransitionCheckerWithHolidays` and `TransitionEMAWithHolidays` use the same market model. The market trades 24 hours a day, 5 days a week. The session of a weekday D starts at 20:00 ET on the day before D and ends at 20:00 ET on D. A holiday on D closes the market for this session. The weekly closure is from Friday 20:00 ET to Sunday 20:00 ET.
 
-Both modules inherit `MarketHoliday`. If an oracle uses both modules, one `setHolidayET` call changes both modules.
+These modules inherit `MarketHoliday`. If an oracle uses two of these modules, one `setHolidayET` call changes both modules.
 
-`TransitionCheckerWithHolidays` also inherits `TransitionManager`. It has no constructor, so an oracle that uses it calls the `TransitionManager` constructor with the default window. It checks these transitions on the ET date D:
+`TransitionCheckerWithHolidays` and `TransitionEMAWithHolidays` also inherit `TransitionManager`. They have no constructor, so an oracle that uses one of them calls the `TransitionManager` constructor with the default window. Both modules use these transitions on the ET date D:
 
 | ET date D | 04:00, 09:30 and 16:00 ET | 20:00 ET |
 |---|---|---|
@@ -61,7 +62,28 @@ Both modules inherit `MarketHoliday`. If an oracle uses both modules, one `setHo
 | Sunday | Not checked | Checked if Monday is a trading day |
 | Saturday | Not checked | Not checked |
 
-A transition at the boundary B rejects reads for `B < time <= B + window`. The window is the window that the owner set for the transition, or the default window if it is not set.
+A transition at the boundary B is in force for `B < time <= B + window`. The window is the window that the owner set for the transition, or the default window if it is not set. In this window, `TransitionCheckerWithHolidays` rejects the read and `TransitionEMAWithHolidays` smooths the price.
+
+An oracle cannot use both transition modules. Both modules declare `SUNDAY`, so the oracle does not compile. Also, they read the same windows, so the checker would reject each read that the smoothing module changes.
+
+### Price smoothing after a transition
+
+In the window of a transition with the boundary B and the window W, `TransitionEMAWithHolidays` returns:
+
+```
+alpha = exp(-(t - B) / W)
+price = P_latest * (1 - alpha) + P_prev * alpha
+```
+
+- `t` is the time of the read.
+- `P_latest` is the answer of the latest round.
+- `P_prev` is the answer of the last round with `updatedAt <= B`.
+
+The contract calculates `alpha` in WAD (18 decimals) with `FixedPointMathLib.expWad` from solady. The weight of `P_prev` decreases from almost 1 at `B + 1` to `exp(-1)`, at `B + W`. After the window, the module returns `P_latest`.
+
+The module finds `P_prev` with a binary search over the rounds of the current phase of the Chainlink proxy. The search reads at most `ceil(log2(n + 1))` rounds, with `n` the aggregator round id of the latest round. If the latest round was updated at or before B, the module does not read other rounds. If no round of the current phase was updated at or before B, the module returns `P_latest`. The module reverts with `PreviousAnswerIsZero` if `P_prev` is zero or negative.
+
+This is not a classic exponential moving average, and the module does not read the previous phases of the proxy. For the reasons, see KI-5 and KI-6 in [`doc/KNOWN_ISSUES.md`](./doc/KNOWN_ISSUES.md).
 
 ### Libraries
 
@@ -72,6 +94,7 @@ The modules use these libraries:
 | `UnixTimestamp` | Converts Unix timestamps to Gregorian calendar dates and back. Returns the weekday. |
 | `ETTimestamp` | US Eastern Time helpers. Calculates the daylight saving time (DST) boundaries and the ET offset, and converts UTC to ET and back. Returns whether an ET timestamp or an ET date is on a weekend. Uses the US DST rules in force since 2007. |
 | `ETHelpers` | Helpers that more than one module needs. `getDSTBoundaries` returns the DST boundaries for the UTC year of a timestamp. |
+| `PhaseAggregatorHelper` | Converts a Chainlink proxy round id to its phase id and aggregator round id, and back. |
 
 For the security issues that the project accepts, see [`doc/KNOWN_ISSUES.md`](./doc/KNOWN_ISSUES.md).
 
@@ -123,10 +146,10 @@ The profiles are in `foundry.toml`.
 | `default` | `forge test` | Unit and fuzz tests in `test/`. `ffi` is disabled, so the differential tests are skipped. |
 | `differential` | `FOUNDRY_PROFILE=differential forge test` | Differential tests in `test/differential/solidity/`. `ffi` is enabled. Each fuzz test does 1000 runs. The output goes to `out-differential/`, compiled for `evm_version = cancun`. |
 
-The differential tests compare `UnixTimestamp`, `ETTimestamp`, the weekend helpers of `StalenessChecker`, the holiday rules of `StalenessCheckerWithHolidays` and the transition rules of `TransitionCheckerWithHolidays` with a reference in Python. There is also a second harness that uses `pytest`, `hypothesis` and titanoboa. For the setup, the commands and the known differences, see [`test/differential/README.md`](./test/differential/README.md).
+The differential tests compare `UnixTimestamp`, `ETTimestamp`, the weekend helpers of `StalenessChecker`, the holiday rules of `StalenessCheckerWithHolidays`, the transition rules of `TransitionCheckerWithHolidays` and the smoothed price of `TransitionEMAWithHolidays` with a reference in Python. There is also a second harness that uses `pytest`, `hypothesis` and titanoboa. For the setup, the commands and the known differences, see [`test/differential/README.md`](./test/differential/README.md).
 
 ## TO-DO
 
-- Process half days in the holiday modules (`StalenessCheckerWithHolidays`, `TransitionCheckerWithHolidays`).
+- Process half days in the holiday modules (`StalenessCheckerWithHolidays`, `TransitionCheckerWithHolidays`, `TransitionEMAWithHolidays`).
 - Add a fallback oracle.
 - Do gas optimizations across the contracts.

@@ -155,3 +155,20 @@ def deploy_transition_with_holidays(holidays, default_window: int, own_windows: 
     for d in sorted(holidays):
         c.transact("setHolidayET(uint256,uint256,uint256,bool)", [U256, U256, U256, "bool"], [d.year, d.month, d.day, True])
     return c
+
+
+def deploy_transition_ema_with_holidays(
+    holidays, default_window: int, own_windows: dict[int, int] | None = None
+) -> tuple[EvmContract, EvmContract]:
+    """A new MockPhaseAggregator (8 decimals) and a TransitionEMAWithHolidaysWrapper that reads it, with
+    `default_window`, an own window for each transition in `own_windows` ({Transition index: window}) and each date of
+    `holidays` set by the owner. Returns (oracle, feed). Push rounds to the feed with
+    `feed.transact("pushRound(int256,uint256)", ...)`.
+    The `_build` fixture must have run (request it, or any contract fixture, in the test)."""
+    feed = _deploy("MockPhaseAggregator", ["uint8", "string"], [8, "MSFT / USD"])
+    c = _deploy("TransitionEMAWithHolidaysWrapper", ["address", U256], [feed.address, default_window])
+    for transition, window in (own_windows or {}).items():
+        c.transact("setTransitionWindow(uint8,bool,uint256)", ["uint8", "bool", U256], [transition, True, window])
+    for d in sorted(holidays):
+        c.transact("setHolidayET(uint256,uint256,uint256,bool)", [U256, U256, U256, "bool"], [d.year, d.month, d.day, True])
+    return c, feed

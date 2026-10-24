@@ -86,6 +86,7 @@ contract ETTimestampDifferentialTest is DifferentialBase {
         string memory at = string.concat(" @ ET ", vm.toString(_etTs));
         assertEq(lib.toUTCTimestamp(_etTs, etYear), utc, string.concat("toUTCTimestamp(ET year)", at));
         assertEq(lib.toUTCTimestamp(_etTs, utcYear), utc, string.concat("toUTCTimestamp(UTC year)", at));
+        assertEq(lib.toUTCTimestamp(_etTs), utc, string.concat("toUTCTimestamp(no year)", at));
         return true;
     }
 

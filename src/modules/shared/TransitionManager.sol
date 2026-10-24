@@ -68,6 +68,11 @@ abstract contract TransitionManager is Ownable, ITransitionManager {
         return false;
     }
 
+    /// @notice Returns the window in force for a transition.
+    /// @dev Returns `transitionWindows[_transition].transition_window` if `is_set` is true, else
+    ///      `defaultTransitionWindow`.
+    /// @param _transition The transition.
+    /// @return The window, in seconds. Zero if the transition is not checked.
     function _getTransitionWindow(Transition _transition) internal view returns (uint256) {
         TransitionWindow memory transitionWindow = transitionWindows[_transition];
 
@@ -78,6 +83,11 @@ abstract contract TransitionManager is Ownable, ITransitionManager {
         return transitionWindow.transition_window;
     }
 
+    /// @notice Returns the boundary of a transition on an ET date, as an ET timestamp.
+    /// @dev The result is `_etDayTimestamp + _getTransitionOffset(_transition)`.
+    /// @param _transition The transition.
+    /// @param _etDayTimestamp ET timestamp of 00:00 ET on the date of the transition.
+    /// @return ET timestamp of the boundary, in seconds.
     function _getTransitionBoundary(Transition _transition, uint256 _etDayTimestamp) internal pure returns (uint256) {
         return _etDayTimestamp + _getTransitionOffset(_transition);
     }

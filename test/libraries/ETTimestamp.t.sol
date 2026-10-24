@@ -253,6 +253,41 @@ contract ETTimestampTest is Test {
         lib.toUTCTimestamp(T.EDT_FRI_2000, 10000);
     }
 
+    // ================================================================== toUTCTimestamp (ET year from the timestamp)
+
+    function test_toUTCTimestampETYear_FridayClose() public view {
+        assertEq(lib.toUTCTimestamp(T.EDT_FRI_2000 - EDT), T.EDT_FRI_2000, "EDT");
+        assertEq(lib.toUTCTimestamp(T.EST_FRI_2000 - EST), T.EST_FRI_2000, "EST");
+    }
+
+    function test_toUTCTimestampETYear_NewYear() public view {
+        // Fri 2021-12-31 20:00 EST == 2022-01-01 01:00 UTC. The ET year is 2021.
+        uint256 close = 1640998800;
+        assertEq(lib.toUTCTimestamp(close - EST), close);
+    }
+
+    function test_toUTCTimestampETYear_AroundDSTSwitches() public view {
+        uint256 march = T.DST_START_2024 - 7 hours;
+        assertEq(lib.toUTCTimestamp(march + 2 hours - 1), T.DST_START_2024 - 1, "01:59:59 EST");
+        assertEq(lib.toUTCTimestamp(march + 3 hours), T.DST_START_2024, "03:00 EDT");
+        uint256 november = T.DST_END_2024 - 6 hours;
+        assertEq(lib.toUTCTimestamp(november + 1 hours + 30 minutes), T.DST_END_2024 - 30 minutes, "01:30");
+        assertEq(lib.toUTCTimestamp(november + 2 hours), T.DST_END_2024 + 1 hours, "02:00 EST");
+    }
+
+    function test_RevertWhen_toUTCTimestampETYear_YearAbove9999() public {
+        lib.toUTCTimestamp(T.MAX_DATETIME); // 9999-12-31 23:59:59
+        vm.expectRevert(abi.encodeWithSelector(UnixTimestamp.InvalidYear.selector));
+        lib.toUTCTimestamp(T.MAX_DATETIME + 1); // 10000-01-01
+    }
+
+    /// @dev The overload without a year gives the same result as the overload with the ET year.
+    function testFuzz_toUTCTimestampETYear_SameAsWithETYear(uint256 _etTs) public view {
+        _etTs = bound(_etTs, 0, T.MAX_DATETIME);
+        (uint256 etYear,,) = UnixTimestamp.getDate(_etTs);
+        assertEq(lib.toUTCTimestamp(_etTs), lib.toUTCTimestamp(_etTs, etYear));
+    }
+
     /// @dev toUTCTimestamp(toETTimestamp(ts)) == ts, except in the second (EST) occurrence of the repeated
     ///      November hour, where the first (EDT) occurrence is returned.
     function testFuzz_toUTCTimestamp_RoundTrip(uint256 _ts) public view {

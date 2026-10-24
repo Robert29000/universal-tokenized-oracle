@@ -29,6 +29,11 @@ Usage:
       -> (uint256 outcome)    0 accepted, 1 + i in the window of Transition i
       Holidays as for `holiday`. <wi> is the window in force for Transition i (OvernightToPreMarket = 0 ...
       PostMarketToOvernight = 3).
+  ffi_reference.py transition_window <ts> <firstDay> <mask> <w0> <w1> <w2> <w3>
+      -> (uint256 outcome, uint256 boundary)    as `transition`, plus the UTC boundary of the window (0 if none)
+  ffi_reference.py ema <ts> <boundary> <window> <answer1> <updatedAt1> ... <answerN> <updatedAtN>
+      -> (uint256 lo, uint256 hi)    range of the expected TransitionEMAWithHolidays price. The rounds are the
+      current phase, oldest first. <boundary> is 0 if ts is in no window.
 """
 
 from __future__ import annotations
@@ -99,6 +104,13 @@ def main(argv: list[str]) -> str:
     if cmd == "transition":
         ts, first_day, mask, *windows = args
         return encode(ref.transition_outcome(ts, ref.holidays_from_mask(first_day, mask), tuple(windows)))
+    if cmd == "transition_window":
+        ts, first_day, mask, *windows = args
+        return encode(*ref.transition_window(ts, ref.holidays_from_mask(first_day, mask), tuple(windows)))
+    if cmd == "ema":
+        ts, boundary, window, *flat = args
+        rounds = list(zip(flat[0::2], flat[1::2]))
+        return encode(*ref.ema_price_range(ts, boundary, window, rounds))
     raise SystemExit(f"unknown command: {cmd}")
 
 

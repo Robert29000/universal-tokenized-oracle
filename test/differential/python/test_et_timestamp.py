@@ -203,14 +203,15 @@ def test_reference_sanity():
 
 
 def assert_to_utc(et, et_ts: int) -> bool:
-    """Compares toUTCTimestamp with both allowed year arguments: the ET year of `et_ts` and the UTC year of the
-    result. Returns False, and checks nothing, in the two DST transition hours (the March hour that does not
+    """Compares toUTCTimestamp with both allowed year arguments (the ET year of `et_ts` and the UTC year of the
+    result) and the overload without a year. Returns False, and checks nothing, in the two DST transition hours (the March hour that does not
     exist and the November hour that occurs twice). The oracle converts only 20:00 ET, never these hours."""
     valid, utc = ref.et_to_utc(et_ts)
     if not valid:
         return False
     for year in (ref.get_date(et_ts)[0], ref.get_date(utc)[0]):
         assert et.call("toUTCTimestamp(uint256,uint256)", [U, U], [et_ts, year], [U]) == utc, (et_ts, year)
+    assert et.call("toUTCTimestamp(uint256)", [U], [et_ts], [U]) == utc, et_ts
     return True
 
 

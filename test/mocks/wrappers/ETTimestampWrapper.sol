@@ -37,4 +37,8 @@ contract ETTimestampWrapper {
     function toUTCTimestamp(uint256 _etTimestamp, uint256 _year) external pure returns (uint256) {
         return ETTimestamp.toUTCTimestamp(_etTimestamp, _year);
     }
+
+    function toUTCTimestamp(uint256 _etTimestamp) external pure returns (uint256) {
+        return ETTimestamp.toUTCTimestamp(_etTimestamp);
+    }
 }
