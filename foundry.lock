@@ -16,5 +16,11 @@
       "name": "v5.7.0",
       "rev": "cab19933c33c2ad1d4c7a84864a3601dddfd16f3"
     }
+  },
+  "lib/solady": {
+    "branch": {
+      "name": "main",
+      "rev": "258f67cc71e39cff307b726939ade17e9d8bcf5c"
+    }
   }
 }
