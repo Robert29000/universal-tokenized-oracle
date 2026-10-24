@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import {IUniversalOracleBase} from "src/interfaces/IUniversalOracleBase.sol";
 import {ITransitionCheckerWithHolidays} from "src/modules/interfaces/ITransitionCheckerWithHolidays.sol";
+import {ITransitionManager} from "src/modules/shared/interfaces/ITransitionManager.sol";
 import {UnixTimestamp} from "src/libraries/UnixTimestamp.sol";
 import {ETTimestamp} from "src/libraries/ETTimestamp.sol";
 import {TransitionCheckerWithHolidaysWrapper} from "test/mocks/wrappers/TransitionCheckerWithHolidaysWrapper.sol";
@@ -44,7 +45,7 @@ contract TransitionCheckerWithHolidaysDifferentialTest is DifferentialBase {
             // About one transition in two has its own window. The own window is often short or zero.
             if (seed & 1 == 1) {
                 windows[i] = (seed >> 1) & 1 == 1 ? (seed >> 2) % MAX_WINDOW : (seed >> 2) % 3;
-                o.setTransitionWindow(ITransitionCheckerWithHolidays.Transition(i), true, windows[i]);
+                o.setTransitionWindow(ITransitionManager.Transition(i), true, windows[i]);
             }
         }
         for (uint256 i = 0; i < WINDOW; i++) {

@@ -6,6 +6,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 import {IUniversalOracleBase} from "src/interfaces/IUniversalOracleBase.sol";
 import {ITransitionCheckerWithHolidays} from "src/modules/interfaces/ITransitionCheckerWithHolidays.sol";
+import {ITransitionManager} from "src/modules/shared/interfaces/ITransitionManager.sol";
 import {IMarketHoliday} from "src/modules/shared/interfaces/IMarketHoliday.sol";
 
 import {UnixTimestamp} from "src/libraries/UnixTimestamp.sol";
@@ -21,7 +22,7 @@ contract TransitionCheckerWithHolidaysTest is Test {
     uint256 internal constant WINDOW = 10 minutes;
     uint256 internal constant MAX_WINDOW = 4 hours;
 
-    // Transition as uint8 (see TransitionCheckerWithHolidaysWrapper)
+    // Transition as uint8 (see ITransitionManager.Transition)
     uint8 internal constant OVERNIGHT_TO_PRE = 0;
     uint8 internal constant PRE_TO_REGULAR = 1;
     uint8 internal constant REGULAR_TO_POST = 2;
@@ -136,28 +137,10 @@ contract TransitionCheckerWithHolidaysTest is Test {
         assertEq(oracle.defaultTransitionWindow(), WINDOW);
         assertEq(oracle.owner(), address(this));
         assertEq(address(oracle.aggregator()), address(feed));
-        for (uint8 i = 0; i < 4; i++) {
-            (bool isSet, uint256 window) = oracle.transitionWindows(ITransitionCheckerWithHolidays.Transition(i));
-            assertFalse(isSet);
-            assertEq(window, 0);
-        }
-    }
-
-    function test_constructor_EmitsDefaultTransitionWindowSet() public {
-        vm.expectEmit(true, true, true, true);
-        emit ITransitionCheckerWithHolidays.DefaultTransitionWindowSet(WINDOW);
-        new TransitionCheckerWithHolidaysWrapper(address(feed), WINDOW);
-    }
-
-    function test_constructor_BoundaryValuesAccepted() public {
-        TransitionCheckerWithHolidaysWrapper o = new TransitionCheckerWithHolidaysWrapper(address(feed), 0);
-        assertEq(o.defaultTransitionWindow(), 0);
-        o = new TransitionCheckerWithHolidaysWrapper(address(feed), MAX_WINDOW - 1);
-        assertEq(o.defaultTransitionWindow(), MAX_WINDOW - 1);
     }
 
     function test_RevertWhen_constructor_DefaultWindowEqualsMax() public {
-        vm.expectRevert(abi.encodeWithSelector(ITransitionCheckerWithHolidays.DefaultTransitionWindowTooLong.selector));
+        vm.expectRevert(abi.encodeWithSelector(ITransitionManager.DefaultTransitionWindowTooLong.selector));
         new TransitionCheckerWithHolidaysWrapper(address(feed), MAX_WINDOW);
     }
 
@@ -166,54 +149,36 @@ contract TransitionCheckerWithHolidaysTest is Test {
         new TransitionCheckerWithHolidaysWrapper(address(0), WINDOW);
     }
 
-    function testFuzz_constructor(uint256 _window) public {
-        if (_window >= MAX_WINDOW) {
-            vm.expectRevert(abi.encodeWithSelector(ITransitionCheckerWithHolidays.DefaultTransitionWindowTooLong.selector));
-        }
-        TransitionCheckerWithHolidaysWrapper o = new TransitionCheckerWithHolidaysWrapper(address(feed), _window);
-        if (_window < MAX_WINDOW) assertEq(o.defaultTransitionWindow(), _window);
-    }
-
     function test_constants() public view {
-        assertEq(oracle.OVERNIGHT_TO_PRE_MARKET_OFFSET(), AT_0400);
-        assertEq(oracle.PRE_MARKET_TO_REGULAR_OFFSET(), AT_0930);
-        assertEq(oracle.REGULAR_TO_POST_MARKET_OFFSET(), AT_1600);
-        assertEq(oracle.POST_MARKET_TO_OVERNIGHT_OFFSET(), AT_2000);
         assertEq(oracle.SUNDAY(), 6);
-        assertEq(oracle.MAX_TRANSITION_WINDOW(), MAX_WINDOW);
     }
 
-    /// @dev The windows cannot overlap: the shortest time between two boundaries is MAX_TRANSITION_WINDOW, and the
-    ///      20:00 window ends before 00:00.
-    function test_constants_WindowsCannotOverlap() public view {
-        uint256 maxWindow = oracle.MAX_TRANSITION_WINDOW();
-        assertLe(AT_0400 + maxWindow, AT_0930);
-        assertLe(AT_0930 + maxWindow, AT_1600);
-        assertLe(AT_1600 + maxWindow, AT_2000);
-        assertLe(AT_2000 + maxWindow, 1 days);
-    }
+    // ================================================================== TransitionManager integration
+    // The window storage, the setters, _isTransition and _getTransitionOffset are tested in
+    // test/modules/shared/TransitionManager.t.sol.
 
-    // ================================================================== setDefaultTransitionWindow
-
-    function test_setDefaultTransitionWindow() public {
+    function test_setTransitionWindow_InheritedFromTransitionManager() public {
+        ITransitionManager.Transition t = ITransitionManager.Transition.PreMarketToRegular;
         vm.expectEmit(true, true, true, true, address(oracle));
-        emit ITransitionCheckerWithHolidays.DefaultTransitionWindowSet(1 hours);
+        emit ITransitionManager.TransitionWindowSet(t, true, 1 hours);
+        oracle.setTransitionWindow(t, true, 1 hours);
+        (bool isSet, uint256 window) = oracle.transitionWindows(t);
+        assertTrue(isSet);
+        assertEq(window, 1 hours);
+    }
+
+    function test_setDefaultTransitionWindow_InheritedFromTransitionManager() public {
+        vm.expectEmit(true, true, true, true, address(oracle));
+        emit ITransitionManager.DefaultTransitionWindowSet(1 hours);
         oracle.setDefaultTransitionWindow(1 hours);
         assertEq(oracle.defaultTransitionWindow(), 1 hours);
-        oracle.setDefaultTransitionWindow(0);
-        assertEq(oracle.defaultTransitionWindow(), 0);
     }
 
-    function test_RevertWhen_setDefaultTransitionWindow_SameValue() public {
-        vm.expectRevert(abi.encodeWithSelector(ITransitionCheckerWithHolidays.TransitionWindowAlreadySet.selector));
-        oracle.setDefaultTransitionWindow(WINDOW);
-    }
-
-    function test_RevertWhen_setDefaultTransitionWindow_TooLong() public {
-        vm.expectRevert(abi.encodeWithSelector(ITransitionCheckerWithHolidays.DefaultTransitionWindowTooLong.selector));
-        oracle.setDefaultTransitionWindow(MAX_WINDOW);
-        oracle.setDefaultTransitionWindow(MAX_WINDOW - 1);
-        assertEq(oracle.defaultTransitionWindow(), MAX_WINDOW - 1);
+    function test_RevertWhen_setTransitionWindow_NotOwner() public {
+        address alice = makeAddr("alice");
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice));
+        oracle.setTransitionWindow(ITransitionManager.Transition.OvernightToPreMarket, true, 1 hours);
     }
 
     function test_RevertWhen_setDefaultTransitionWindow_NotOwner() public {
@@ -221,116 +186,6 @@ contract TransitionCheckerWithHolidaysTest is Test {
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice));
         oracle.setDefaultTransitionWindow(1 hours);
-    }
-
-    function testFuzz_setDefaultTransitionWindow(uint256 _window) public {
-        bytes4 err;
-        if (_window == WINDOW) err = ITransitionCheckerWithHolidays.TransitionWindowAlreadySet.selector;
-        else if (_window >= MAX_WINDOW) err = ITransitionCheckerWithHolidays.DefaultTransitionWindowTooLong.selector;
-
-        if (err != bytes4(0)) vm.expectRevert(abi.encodeWithSelector(err));
-        oracle.setDefaultTransitionWindow(_window);
-        assertEq(oracle.defaultTransitionWindow(), err == bytes4(0) ? _window : WINDOW);
-    }
-
-    // ================================================================== setTransitionWindow
-
-    function test_setTransitionWindow() public {
-        ITransitionCheckerWithHolidays.Transition t = ITransitionCheckerWithHolidays.Transition.PreMarketToRegular;
-        vm.expectEmit(true, true, true, true, address(oracle));
-        emit ITransitionCheckerWithHolidays.TransitionWindowSet(t, true, 1 hours);
-        oracle.setTransitionWindow(t, true, 1 hours);
-        (bool isSet, uint256 window) = oracle.transitionWindows(t);
-        assertTrue(isSet);
-        assertEq(window, 1 hours);
-        // The same value is accepted again.
-        oracle.setTransitionWindow(t, true, 1 hours);
-        // The other transitions do not change.
-        (isSet, window) = oracle.transitionWindows(ITransitionCheckerWithHolidays.Transition.RegularToPostMarket);
-        assertFalse(isSet);
-        assertEq(window, 0);
-    }
-
-    function test_RevertWhen_setTransitionWindow_TooLong() public {
-        ITransitionCheckerWithHolidays.Transition t = ITransitionCheckerWithHolidays.Transition.PostMarketToOvernight;
-        vm.expectRevert(abi.encodeWithSelector(ITransitionCheckerWithHolidays.TransitionWindowTooLong.selector));
-        oracle.setTransitionWindow(t, true, MAX_WINDOW);
-        // The bound applies also if the window is not used.
-        vm.expectRevert(abi.encodeWithSelector(ITransitionCheckerWithHolidays.TransitionWindowTooLong.selector));
-        oracle.setTransitionWindow(t, false, MAX_WINDOW);
-        oracle.setTransitionWindow(t, true, MAX_WINDOW - 1);
-    }
-
-    function test_RevertWhen_setTransitionWindow_NotOwner() public {
-        address alice = makeAddr("alice");
-        vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice));
-        oracle.setTransitionWindow(ITransitionCheckerWithHolidays.Transition.OvernightToPreMarket, true, 1 hours);
-    }
-
-    function testFuzz_setTransitionWindow(uint8 _transition, bool _isSet, uint256 _window) public {
-        ITransitionCheckerWithHolidays.Transition t = ITransitionCheckerWithHolidays.Transition(bound(_transition, 0, 3));
-        if (_window >= MAX_WINDOW) {
-            vm.expectRevert(abi.encodeWithSelector(ITransitionCheckerWithHolidays.TransitionWindowTooLong.selector));
-        }
-        oracle.setTransitionWindow(t, _isSet, _window);
-        if (_window < MAX_WINDOW) {
-            (bool isSet, uint256 window) = oracle.transitionWindows(t);
-            assertEq(isSet, _isSet);
-            assertEq(window, _window);
-        }
-    }
-
-    // ================================================================== _getTransitionOffset
-
-    function test_getTransitionOffset() public view {
-        for (uint8 i = 0; i < 4; i++) {
-            assertEq(oracle.exposed_getTransitionOffset(i), _boundaryOf(i));
-        }
-    }
-
-    // ================================================================== _isTransition
-
-    function test_isTransition_DefaultWindowEdges() public view {
-        uint256 day = 20_000 days; // any ET date
-        for (uint8 i = 0; i < 4; i++) {
-            uint256 boundary = day + _boundaryOf(i);
-            assertFalse(oracle.exposed_isTransition(i, boundary - 1, day), "boundary - 1");
-            assertFalse(oracle.exposed_isTransition(i, boundary, day), "boundary");
-            assertTrue(oracle.exposed_isTransition(i, boundary + 1, day), "boundary + 1");
-            assertTrue(oracle.exposed_isTransition(i, boundary + WINDOW, day), "end of window");
-            assertFalse(oracle.exposed_isTransition(i, boundary + WINDOW + 1, day), "after window");
-        }
-    }
-
-    function test_isTransition_OwnWindowReplacesDefault() public {
-        uint256 boundary = 20_000 days + AT_0930;
-        oracle.setTransitionWindow(ITransitionCheckerWithHolidays.Transition.PreMarketToRegular, true, 1 hours);
-        assertTrue(oracle.exposed_isTransition(PRE_TO_REGULAR, boundary + 1 hours, 20_000 days));
-        assertFalse(oracle.exposed_isTransition(PRE_TO_REGULAR, boundary + 1 hours + 1, 20_000 days));
-        // A shorter own window is used too.
-        oracle.setTransitionWindow(ITransitionCheckerWithHolidays.Transition.PreMarketToRegular, true, 1);
-        assertTrue(oracle.exposed_isTransition(PRE_TO_REGULAR, boundary + 1, 20_000 days));
-        assertFalse(oracle.exposed_isTransition(PRE_TO_REGULAR, boundary + 2, 20_000 days));
-    }
-
-    function test_isTransition_NotSetUsesDefault() public {
-        uint256 boundary = 20_000 days + AT_1600;
-        oracle.setTransitionWindow(ITransitionCheckerWithHolidays.Transition.RegularToPostMarket, false, 1 hours);
-        assertTrue(oracle.exposed_isTransition(REGULAR_TO_POST, boundary + WINDOW, 20_000 days));
-        assertFalse(oracle.exposed_isTransition(REGULAR_TO_POST, boundary + WINDOW + 1, 20_000 days));
-    }
-
-    function test_isTransition_ZeroWindowNeverInTransition() public {
-        uint256 boundary = 20_000 days + AT_0400;
-        oracle.setTransitionWindow(ITransitionCheckerWithHolidays.Transition.OvernightToPreMarket, true, 0);
-        assertFalse(oracle.exposed_isTransition(OVERNIGHT_TO_PRE, boundary, 20_000 days));
-        assertFalse(oracle.exposed_isTransition(OVERNIGHT_TO_PRE, boundary + 1, 20_000 days));
-    }
-
-    function test_RevertWhen_isTransition_InvalidEnumValue() public {
-        vm.expectRevert(); // Panic 0x21: enum conversion out of range
-        oracle.exposed_isTransition(4, 0, 0);
     }
 
     // ================================================================== _afterRead: trading days
@@ -434,8 +289,8 @@ contract TransitionCheckerWithHolidaysTest is Test {
     // ================================================================== _afterRead: windows
 
     function test_afterRead_OwnWindowPerTransition() public {
-        oracle.setTransitionWindow(ITransitionCheckerWithHolidays.Transition.PreMarketToRegular, true, 1 hours);
-        oracle.setTransitionWindow(ITransitionCheckerWithHolidays.Transition.RegularToPostMarket, true, 0);
+        oracle.setTransitionWindow(ITransitionManager.Transition.PreMarketToRegular, true, 1 hours);
+        oracle.setTransitionWindow(ITransitionManager.Transition.RegularToPostMarket, true, 0);
         _assertChecked(EDT_WED_0000 + AT_0400, OVERNIGHT_TO_PRE, WINDOW);
         _assertChecked(EDT_WED_0000 + AT_0930, PRE_TO_REGULAR, 1 hours);
         _assertNotChecked(EDT_WED_0000 + AT_1600);
@@ -554,7 +409,7 @@ contract TransitionCheckerWithHolidaysTest is Test {
         for (uint8 i = 0; i < 4; i++) {
             uint256 seed = uint256(keccak256(abi.encode(_windows, i)));
             if (seed & 1 == 1) {
-                oracle.setTransitionWindow(ITransitionCheckerWithHolidays.Transition(i), true, (seed >> 1) % MAX_WINDOW);
+                oracle.setTransitionWindow(ITransitionManager.Transition(i), true, (seed >> 1) % MAX_WINDOW);
             }
         }
         monday = 1168214400 + bound(_week, 0, 4500) * 7 days; // Mondays from 2007-01-08
@@ -596,7 +451,7 @@ contract TransitionCheckerWithHolidaysTest is Test {
     }
 
     function _windowOf(uint8 _transition) internal view returns (uint256) {
-        (bool isSet, uint256 window) = oracle.transitionWindows(ITransitionCheckerWithHolidays.Transition(_transition));
+        (bool isSet, uint256 window) = oracle.transitionWindows(ITransitionManager.Transition(_transition));
         return isSet ? window : oracle.defaultTransitionWindow();
     }
 

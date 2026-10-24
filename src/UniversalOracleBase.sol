@@ -18,6 +18,7 @@ import { IUniversalOracleBase } from "./interfaces/IUniversalOracleBase.sol";
 ///         and corporate pause).
 ///      2. `aggregator.latestRoundData()` is read into a `RoundData` struct.
 ///      3. `_afterRead(round)`: checks on the round data (for example price > 0 and staleness).
+///      4. `_adjustAnswer(round.answer)`: converts the validated answer into the returned price.
 ///      Modules inherit from this contract and override the hooks.
 ///      The deployer becomes the `Ownable` owner. Modules use the owner for their setters.
 ///      Trust assumption: the aggregator is a trusted Chainlink-compatible feed. Its decimals are
@@ -38,8 +39,8 @@ abstract contract UniversalOracleBase is Ownable, IUniversalOracleBase {
     }
 
     /// @notice Reads the latest price from the aggregator and validates it with the hooks.
-    /// @dev Runs `_beforeRead()`, then `aggregator.latestRoundData()`, then `_afterRead(round)`.
-    ///      Any hook can revert. The `int256` answer is cast to `uint256`.
+    /// @dev Runs `_beforeRead()`, then `aggregator.latestRoundData()`, then `_afterRead(round)`, then
+    ///      `_adjustAnswer(round.answer)`. Any hook can revert.
     /// @return The latest validated price, scaled by `decimals()`.
     function _price() internal virtual view returns (uint256) {
         _beforeRead();
@@ -49,7 +50,7 @@ abstract contract UniversalOracleBase is Ownable, IUniversalOracleBase {
 
         _afterRead(round);
 
-        return uint256(round.answer);
+        return _adjustAnswer(round.answer);
     }
 
     /// @notice Hook that runs before the aggregator is read.
@@ -64,6 +65,15 @@ abstract contract UniversalOracleBase is Ownable, IUniversalOracleBase {
     /// @param _round The round data returned by `aggregator.latestRoundData()`.
     function _afterRead(RoundData memory _round) internal virtual view {
         require(_round.answer > 0, PriceZero());
+    }
+
+    /// @notice Hook that converts the validated answer into the returned price.
+    /// @dev Runs after `_afterRead`, which already checked that `_answer > 0`. The base implementation casts the
+    ///      `int256` answer to `uint256`. Overrides can return another price, for example a smoothed price.
+    /// @param _answer The `answer` of the round data returned by `aggregator.latestRoundData()`.
+    /// @return The price, scaled by `decimals()`.
+    function _adjustAnswer(int256 _answer) internal virtual view returns (uint256) {
+        return uint256(_answer);
     }
 
     /// @inheritdoc IUniversalOracleBase

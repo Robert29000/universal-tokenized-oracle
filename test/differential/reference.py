@@ -266,7 +266,7 @@ def holiday_staleness_outcome(
 
 # --------------------------------------------------------------------------- TransitionCheckerWithHolidays
 
-# New York wall-clock time of each session transition, in ITransitionCheckerWithHolidays.Transition order:
+# New York wall-clock time of each session transition, in ITransitionManager.Transition order:
 # OvernightToPreMarket, PreMarketToRegular, RegularToPostMarket, PostMarketToOvernight.
 TRANSITION_TIMES = (time(4, 0), time(9, 30), time(16, 0), time(20, 0))
 POST_MARKET_TO_OVERNIGHT = 3

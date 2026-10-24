@@ -6,20 +6,21 @@
 
 Universal Tokenized Oracle is a price oracle for tokenized stocks. It reads the price from a Chainlink-compatible feed. Before it returns the price, it runs a set of checks. If one check fails, the read reverts.
 
-The checks are in separate modules. Each module overrides one of two hooks in `UniversalOracleBase`:
+The checks are in separate modules. Each module overrides one or more of these hooks in `UniversalOracleBase`:
 
 1. `_beforeRead()` runs before the oracle reads the feed. Checks that do not need the round data go here.
 2. `_afterRead(round)` runs after the oracle reads the feed. Checks on the round data go here.
+3. `_adjustAnswer(answer)` runs after the checks and converts the validated answer into the returned price. The base implementation returns the answer unchanged, as a `uint256`.
 
 ## Modules
 
 | Module | Description |
 |---|---|
-| `UniversalOracleBase` | Base contract. Reads `latestRoundData()` from the feed and runs the hooks. Reverts if the price is 0 or less. The deployer becomes the owner. |
+| `UniversalOracleBase` | Base contract. Reads `latestRoundData()` from the feed and runs the hooks. Reverts if the price is 0 or less. Returns the price from `_adjustAnswer`. The deployer becomes the owner. |
 | `L2SequencerChecker` | Reverts while the L2 sequencer is down. After the sequencer status changes, it also reverts until `downtimeWait` seconds pass. Reads the Chainlink L2 sequencer uptime feed. |
 | `StalenessChecker` | Reverts if the price is older than `maxStaleness`. While the market trades, it reverts if the price is older than `tradingStaleness`. During the weekend closure (Friday 20:00 ET to Sunday 20:00 ET), it accepts a price that was fresh at the Friday close. A grace period `reopenTimeWait` applies after the Sunday reopen. |
 | `StalenessCheckerWithHolidays` | Extends `StalenessChecker` with US market holidays. The owner sets each holiday date. On a holiday, the module accepts a price that was fresh at the last market close. |
-| `TransitionCheckerWithHolidays` | Reverts for a short window after each US market session transition: 04:00 ET (overnight to pre-market), 09:30 ET (pre-market to regular), 16:00 ET (regular to post-market) and 20:00 ET (post-market to overnight). The module skips the transitions that do not occur because of a weekend or a holiday. The owner sets a default window and, optionally, a window for each transition. Each window must be less than 4 hours (`MAX_TRANSITION_WINDOW`). |
+| `TransitionCheckerWithHolidays` | Reverts for a short window after each US market session transition: 04:00 ET (overnight to pre-market), 09:30 ET (pre-market to regular), 16:00 ET (regular to post-market) and 20:00 ET (post-market to overnight). The module skips the transitions that do not occur because of a weekend or a holiday. The windows come from the shared `TransitionManager` module. |
 | `CorporatePauseChecker` | Reverts while the corporate provider reports a pause. Reads an `IPauseConfigurator`. The owner can replace the configurator. |
 
 ### Providers and configurators
@@ -34,13 +35,24 @@ The project supports the tokenized stocks of these providers. Each provider has 
 
 To support a different provider, write a contract that implements `IPauseConfigurator`.
 
+### Shared modules
+
+The modules in `src/modules/shared/` hold state and configuration that more than one module can use. They do not override the hooks. A module that needs them inherits them.
+
+| Shared module | Description |
+|---|---|
+| `MarketHoliday` | Stores the US market holidays. The owner sets each holiday as an ET calendar date with `setHolidayET`. |
+| `TransitionManager` | Stores the windows of the US market session transitions and the ET time of each transition. The owner sets a default window with `setDefaultTransitionWindow` and, optionally, a window for each transition with `setTransitionWindow`. Each window must be less than 4 hours (`MAX_TRANSITION_WINDOW`). It does not decide on which dates a transition occurs: the module that inherits it does that. |
+
+If an oracle uses two modules that inherit the same shared module, it has only one copy of its storage, so one call changes both modules.
+
 ### Market hours and holidays
 
 `StalenessCheckerWithHolidays` and `TransitionCheckerWithHolidays` use the same market model. The market trades 24 hours a day, 5 days a week. The session of a weekday D starts at 20:00 ET on the day before D and ends at 20:00 ET on D. A holiday on D closes the market for this session. The weekly closure is from Friday 20:00 ET to Sunday 20:00 ET.
 
-Both modules inherit the shared `MarketHoliday` module, which stores the holidays. The owner sets each holiday as an ET calendar date with `setHolidayET`. If an oracle uses both modules, it has only one holiday storage, so one call changes both modules.
+Both modules inherit `MarketHoliday`. If an oracle uses both modules, one `setHolidayET` call changes both modules.
 
-`TransitionCheckerWithHolidays` checks these transitions on the ET date D:
+`TransitionCheckerWithHolidays` also inherits `TransitionManager`. It has no constructor, so an oracle that uses it calls the `TransitionManager` constructor with the default window. It checks these transitions on the ET date D:
 
 | ET date D | 04:00, 09:30 and 16:00 ET | 20:00 ET |
 |---|---|---|
@@ -49,7 +61,7 @@ Both modules inherit the shared `MarketHoliday` module, which stores the holiday
 | Sunday | Not checked | Checked if Monday is a trading day |
 | Saturday | Not checked | Not checked |
 
-A transition at the boundary B rejects reads for `B < time <= B + window`.
+A transition at the boundary B rejects reads for `B < time <= B + window`. The window is the window that the owner set for the transition, or the default window if it is not set.
 
 ### Libraries
 
