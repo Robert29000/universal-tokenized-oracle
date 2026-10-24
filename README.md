@@ -10,7 +10,7 @@ The checks are in separate modules. Each module overrides one or more of these h
 
 1. `_beforeRead()` runs before the oracle reads the feed. Checks that do not need the round data go here.
 2. `_afterRead(round)` runs after the oracle reads the feed. Checks on the round data go here.
-3. `_adjustAnswer(answer)` runs after the checks and converts the validated answer into the returned price. The base implementation returns the answer unchanged, as a `uint256`.
+3. `_adjustAnswer(round)` runs after the checks and converts the validated round answer into the returned price.
 
 ## Modules
 
