@@ -20,7 +20,7 @@ The checks are in separate modules. Each module overrides one or more of these h
 | `L2SequencerChecker` | Reverts while the L2 sequencer is down. After the sequencer status changes, it also reverts until `downtimeWait` seconds pass. Reads the Chainlink L2 sequencer uptime feed. |
 | `StalenessChecker` | Reverts if the price is older than `maxStaleness`. While the market trades, it reverts if the price is older than `tradingStaleness`. During the weekend closure (Friday 20:00 ET to Sunday 20:00 ET), it accepts a price that was fresh at the Friday close. A grace period `reopenTimeWait` applies after the Sunday reopen. |
 | `StalenessCheckerWithHolidays` | Extends `StalenessChecker` with US market holidays. The owner sets each holiday date. On a holiday, the module accepts a price that was fresh at the last market close. |
-| `TransitionCheckerWithHolidays` | Reverts for a short window after each US market session transition: 04:00 ET (overnight to pre-market), 09:30 ET (pre-market to regular), 16:00 ET (regular to post-market) and 20:00 ET (post-market to overnight). The module skips the transitions that do not occur because of a weekend or a holiday. The windows come from the shared `TransitionManager` module. |
+| `TransitionCheckerWithHolidays` | Reverts for a short window after each US market session transition: 04:00 ET (overnight to pre-market), 09:30 ET (pre-market to regular), 16:00 ET (regular to post-market) and 20:00 ET (post-market to overnight). The module skips the transitions that do not occur because of a weekend or a holiday. |
 | `CorporatePauseChecker` | Reverts while the corporate provider reports a pause. Reads an `IPauseConfigurator`. The owner can replace the configurator. |
 
 ### Providers and configurators
@@ -42,7 +42,7 @@ The modules in `src/modules/shared/` hold state and configuration that more than
 | Shared module | Description |
 |---|---|
 | `MarketHoliday` | Stores the US market holidays. The owner sets each holiday as an ET calendar date with `setHolidayET`. |
-| `TransitionManager` | Stores the windows of the US market session transitions and the ET time of each transition. The owner sets a default window with `setDefaultTransitionWindow` and, optionally, a window for each transition with `setTransitionWindow`. Each window must be less than 4 hours (`MAX_TRANSITION_WINDOW`). It does not decide on which dates a transition occurs: the module that inherits it does that. |
+| `TransitionManager` | Stores the windows of the US market session transitions and the ET time of each transition. The owner sets a default window with `setDefaultTransitionWindow` and, optionally, a window for each transition with `setTransitionWindow`. |
 
 If an oracle uses two modules that inherit the same shared module, it has only one copy of its storage, so one call changes both modules.
 
