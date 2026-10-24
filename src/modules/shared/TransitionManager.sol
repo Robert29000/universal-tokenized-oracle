@@ -58,18 +58,28 @@ abstract contract TransitionManager is Ownable, ITransitionManager {
     /// @param _etDayTimestamp ET timestamp of 00:00 ET on the date of the transition.
     /// @return True if `_etCurrentTimestamp` is in the window of the transition.
     function _isTransition(Transition _transition, uint256 _etCurrentTimestamp, uint256 _etDayTimestamp) internal view returns (bool) {
+        uint256 transitionWindow = _getTransitionWindow(_transition);
+
+        uint transition_boundary = _getTransitionBoundary(_transition, _etDayTimestamp);
+
+        if (_etCurrentTimestamp > transition_boundary && _etCurrentTimestamp <= transition_boundary + transitionWindow) {
+            return true;
+        }
+        return false;
+    }
+
+    function _getTransitionWindow(Transition _transition) internal view returns (uint256) {
         TransitionWindow memory transitionWindow = transitionWindows[_transition];
 
         if (!transitionWindow.is_set) {
             transitionWindow.transition_window = defaultTransitionWindow;
         }
 
-        uint transition_boundary = _etDayTimestamp + _getTransitionOffset(_transition);
+        return transitionWindow.transition_window;
+    }
 
-        if (_etCurrentTimestamp > transition_boundary && _etCurrentTimestamp <= transition_boundary + transitionWindow.transition_window) {
-            return true;
-        }
-        return false;
+    function _getTransitionBoundary(Transition _transition, uint256 _etDayTimestamp) internal pure returns (uint256) {
+        return _etDayTimestamp + _getTransitionOffset(_transition);
     }
 
     /// @notice Returns the boundary of a transition as seconds after 00:00 ET.
